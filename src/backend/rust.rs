@@ -785,6 +785,25 @@ impl RustOutput {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn gen_normal_rule(
+        cst: &Cst<'_>,
+        sema: &SemanticData<'_>,
+        token_symbols: &FxHashMap<&str, &str>,
+        has_rule_rename: bool,
+        has_rule_creation: bool,
+        name: &str,
+        regex: Regex,
+        is_start: bool,
+        elision: RuleNodeElision,
+    ) -> TokenStream {
+        let elision_init = Self::gen_elision_init(has_rule_creation, &self_ident(), is_start, elision);
+        let node_kind = if !is_start { Self::gen_node_kind_decl(has_rule_rename, name, true) } else { TokenStream::new() };
+        let regex_code = Self::gen_regex(cst, sema, regex, token_symbols, false, name, elision, &self_ident(), has_rule_rename);
+        let elision_check = Self::gen_elision_check(has_rule_rename, name, &self_ident(), is_start, elision);
+        quote! { #elision_init #node_kind #regex_code #elision_check }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn output_left_recursive_rule(
         cst: &Cst<'_>,
         sema: &SemanticData<'_>,
@@ -1020,6 +1039,253 @@ impl RustOutput {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn gen_left_recursive_rule(
+        cst: &Cst<'_>,
+        sema: &SemanticData<'_>,
+        token_symbols: &FxHashMap<&str, &str>,
+        has_rule_rename: bool,
+        name: &str,
+        regex: Regex,
+        recursive: &RecursiveBranches,
+        in_choice: bool,
+    ) -> TokenStream {
+        let requires_bp = recursive.branches().len() > 1
+            && recursive
+                .branches()
+                .iter()
+                .any(|branch| matches!(branch, Recursion::Right(..) | Recursion::LeftRight(..)));
+        let parser = parser_ident();
+        let self_ = self_ident();
+        let min_bp_param = if requires_bp {
+            quote! { min_bp : usize , }
+        } else {
+            TokenStream::new()
+        };
+        let ret_type = if in_choice {
+            quote! { -> Option < () > }
+        } else {
+            TokenStream::new()
+        };
+        let node_kind_decl = Self::gen_node_kind_decl(has_rule_rename, name, true);
+        let ops: Vec<Regex> = if let Regex::Alternation(alt) = regex {
+            alt.operands(cst).collect()
+        } else {
+            unreachable!()
+        };
+        let mut right_arms = Vec::new();
+        let mut advance_error_set = BTreeSet::new();
+        for alt_op in ops {
+            let branch = recursive.get_branch(alt_op);
+            if !matches!(branch, None | Some(Recursion::Right(..))) {
+                continue;
+            }
+            let predict = &sema.predict_sets[&alt_op.syntax()];
+            let predicate = Self::gen_predicate(cst, name, alt_op, &parser);
+            advance_error_set = if predicate.is_none() {
+                advance_error_set.difference(predict).cloned().collect()
+            } else {
+                advance_error_set.union(predict).cloned().collect()
+            };
+            let predict_pat = gen_pattern(predict);
+            let elision = *sema.elision.get(&alt_op.syntax()).unwrap();
+            let elision_init = Self::gen_elision_init(false, &parser, false, elision);
+            let body = if let Some(Recursion::Right(_, index)) = branch {
+                let bp = recursive.binding_power(alt_op).0;
+                let Regex::Concat(concat) = alt_op else {
+                    unreachable!()
+                };
+                let mut parts = Vec::new();
+                for (i, concat_op) in concat.operands(cst).enumerate() {
+                    if i == index {
+                        let lhs_ident = quote::format_ident!("lhs");
+                        let call = if requires_bp {
+                            if in_choice {
+                                quote! { rec ( #parser , diags , #bp , #lhs_ident ) ? ; }
+                            } else {
+                                quote! { rec ( #parser , diags , #bp , #lhs_ident ) ; }
+                            }
+                        } else if in_choice {
+                            quote! { rec ( #parser , diags , #lhs_ident ) ? ; }
+                        } else {
+                            quote! { rec ( #parser , diags , #lhs_ident ) ; }
+                        };
+                        parts.push(quote! {
+                            let lhs = #parser . mark ( diags ) ;
+                            #call
+                        });
+                    } else {
+                        parts.push(Self::gen_regex(
+                            cst, sema, concat_op, token_symbols, false, name, elision, &parser, has_rule_rename,
+                        ));
+                    }
+                }
+                quote! { # ( #parts ) * }
+            } else {
+                Self::gen_regex(
+                    cst, sema, alt_op, token_symbols, false, name, elision, &parser, has_rule_rename,
+                )
+            };
+            let elision_check = Self::gen_elision_check(has_rule_rename, name, &parser, false, elision);
+            let arm = match predicate {
+                Some(pred) => quote! {
+                    #predict_pat if #pred => {
+                        #elision_init
+                        #body
+                        #elision_check
+                    }
+                },
+                None => quote! {
+                    #predict_pat => {
+                        #elision_init
+                        #body
+                        #elision_check
+                    }
+                },
+            };
+            right_arms.push(arm);
+        }
+        let advance_error_arm = if !advance_error_set.is_empty() {
+            let pattern = gen_pattern(&advance_error_set);
+            let msg = gen_syntax_error_message(&[]);
+            quote! {
+                #pattern => {
+                    #parser . advance_with_error ( diags , err ! [ #parser , #msg ] ) ;
+                }
+            }
+        } else {
+            TokenStream::new()
+        };
+        let expected = gen_error_message(&sema.predict_sets[&regex.syntax()], token_symbols);
+        let wildcard_arm = quote! {
+            _ => {
+                #parser . error ( diags , err ! [ #parser , #expected ] ) ;
+            }
+        };
+        let node_kind_assign = Self::gen_node_kind_decl(has_rule_rename, name, false);
+        let mut left_arms = Vec::new();
+        for branch in recursive.branches() {
+            let (concat, left_index, right_index) = match branch {
+                Recursion::Left(Regex::Concat(concat), index) => (concat, *index, None),
+                Recursion::LeftRight(Regex::Concat(concat), left_index, right_index) => {
+                    (concat, *left_index, Some(*right_index))
+                }
+                _ => continue,
+            };
+            let bp = recursive.binding_power(branch.regex());
+            let pred = Self::gen_predicate(cst, name, branch.regex(), &parser);
+            let mut first_predict = None;
+            let mut bp_check = TokenStream::new();
+            let mut body_parts = Vec::new();
+            let mut is_first = true;
+            for (i, concat_op) in concat.operands(cst).enumerate() {
+                if let Regex::Predicate(..) = concat_op {
+                    continue;
+                }
+                if i == left_index {
+                    continue;
+                }
+                if is_first {
+                    is_first = false;
+                    first_predict = Some(gen_pattern(&sema.predict_sets[&concat_op.syntax()]));
+                    if requires_bp {
+                        let left_bp = bp.0;
+                        bp_check = quote! { if #left_bp < min_bp { break ; } }
+                    }
+                    body_parts.push(quote! { let m = #parser . open_before ( lhs , diags ) ; });
+                }
+                if right_index == Some(i) {
+                    let right_bp = bp.1;
+                    let rhs_ident = quote::format_ident!("rhs");
+                    let call = if requires_bp {
+                        if in_choice {
+                            quote! { rec ( #parser , diags , #right_bp , #rhs_ident ) ? ; }
+                        } else {
+                            quote! { rec ( #parser , diags , #right_bp , #rhs_ident ) ; }
+                        }
+                    } else if in_choice {
+                        quote! { rec ( #parser , diags , #rhs_ident ) ? ; }
+                    } else {
+                        quote! { rec ( #parser , diags , #rhs_ident ) ; }
+                    };
+                    body_parts.push(quote! {
+                        let rhs = #parser . mark ( diags ) ;
+                        #call
+                    });
+                } else {
+                    body_parts.push(Self::gen_regex(
+                        cst, sema, concat_op, token_symbols, false, name, RuleNodeElision::None, &parser, has_rule_rename,
+                    ));
+                }
+            }
+            let close = Self::gen_cst_close(has_rule_rename, name, true, &parser, false);
+            let predict_pat = first_predict.unwrap();
+            let arm = match pred {
+                Some(p) => quote! {
+                    #predict_pat if #p => {
+                        #bp_check
+                        # ( #body_parts ) *
+                        #close
+                        continue ;
+                    }
+                },
+                None => quote! {
+                    #predict_pat => {
+                        #bp_check
+                        # ( #body_parts ) *
+                        #close
+                        continue ;
+                    }
+                },
+            };
+            left_arms.push(arm);
+        }
+        let some_return = if in_choice {
+            quote! { Some ( () ) }
+        } else {
+            TokenStream::new()
+        };
+        let lhs_ident = quote::format_ident!("lhs");
+        let outer_call = if requires_bp {
+            if in_choice {
+                quote! { rec ( #self_ , diags , 0 , #lhs_ident ) ? ; }
+            } else {
+                quote! { rec ( #self_ , diags , 0 , #lhs_ident ) ; }
+            }
+        } else if in_choice {
+            quote! { rec ( #self_ , diags , #lhs_ident ) ? ; }
+        } else {
+            quote! { rec ( #self_ , diags , #lhs_ident ) ; }
+        };
+        quote! {
+            fn rec < 'a > (
+                parser : & mut Parser < 'a > ,
+                diags : & mut Vec < < Parser < 'a > as ParserCallbacks < 'a > > :: Diagnostic > ,
+                #min_bp_param
+                mut lhs : MarkClosed ,
+            ) #ret_type {
+                #node_kind_decl
+                match #parser . current {
+                    # ( #right_arms ) *
+                    #advance_error_arm
+                    #wildcard_arm
+                }
+                loop {
+                    #node_kind_assign
+                    match #parser . current {
+                        # ( #left_arms ) *
+                        _ => {
+                            break ;
+                        }
+                    }
+                }
+                #some_return
+            }
+            let #lhs_ident = #self_ . mark ( diags ) ;
+            #outer_call
+        }
+    }
+
     fn gen_parts(cst: &Cst<'_>, rule: RuleDecl) -> TokenStream {
         let name = rule.name(cst).unwrap().0;
         let parse_fn = quote::format_ident!("parse_{}", name);
@@ -1129,6 +1395,72 @@ impl RustOutput {
         }
         output.write_all(b"    }\n")?;
         Ok(())
+    }
+
+    fn gen_rule(
+        cst: &Cst<'_>,
+        sema: &SemanticData<'_>,
+        rule: RuleDecl,
+        token_symbols: &FxHashMap<&str, &str>,
+    ) -> TokenStream {
+        if !sema.used.contains(&rule.syntax()) {
+            return TokenStream::new();
+        }
+        let name = rule.name(cst).unwrap().0;
+        let recursive = sema.recursive.get(&rule);
+        let is_start = sema.start_rule.unwrap() == rule;
+        let has_rule_rename = sema.has_rule_rename.contains(&rule);
+        let has_rule_creation = sema.has_rule_creation.contains(&rule);
+        let elision = if rule.is_elided(cst) {
+            RuleNodeElision::Unconditional
+        } else {
+            rule.regex(cst)
+                .and_then(|regex| sema.elision.get(&regex.syntax()))
+                .copied()
+                .unwrap_or(RuleNodeElision::None)
+        };
+        let in_choice = sema.used_in_ordered_choice.contains(&rule.syntax());
+        let rule_fn = quote::format_ident!("rule_{}", name);
+        let attr = if has_rule_rename {
+            quote! { # [ allow ( unused_assignments ) ] }
+        } else {
+            TokenStream::new()
+        };
+        let ret_type = if in_choice {
+            quote! { -> Option < () > }
+        } else {
+            TokenStream::new()
+        };
+        let body = if let Some(regex) = rule.regex(cst) {
+            if recursive.is_some_and(|recursive| {
+                recursive
+                    .branches()
+                    .iter()
+                    .any(|rec| matches!(rec, Recursion::Left(..) | Recursion::LeftRight(..)))
+            }) {
+                Self::gen_left_recursive_rule(
+                    cst, sema, token_symbols, has_rule_rename, name, regex, recursive.unwrap(), in_choice,
+                )
+            } else {
+                Self::gen_normal_rule(
+                    cst, sema, token_symbols, has_rule_rename, has_rule_creation, name, regex, is_start, elision,
+                )
+            }
+        } else {
+            TokenStream::new()
+        };
+        let return_val = if in_choice {
+            quote! { Some ( () ) }
+        } else {
+            TokenStream::new()
+        };
+        quote! {
+            #attr
+            fn #rule_fn ( & mut self , diags : & mut Vec < < Self as ParserCallbacks < 'a > > :: Diagnostic > ) #ret_type {
+                #body
+                #return_val
+            }
+        }
     }
 
     fn gen_predicate(cst: &Cst<'_>, rule_name: &str, regex: Regex, parser_name: &proc_macro2::Ident) -> Option<TokenStream> {
@@ -2236,7 +2568,7 @@ impl RustOutput {
             output.write_all(Self::gen_parts(cst, *rule).to_string().as_bytes())?;
         }
         for rule in file.rule_decls(cst) {
-            Self::output_rule(cst, sema, rule, output, &token_symbols)?;
+            output.write_all(Self::gen_rule(cst, sema, rule, &token_symbols).to_string().as_bytes())?;
         }
         output.write_all(b"}\n\n")?;
 
