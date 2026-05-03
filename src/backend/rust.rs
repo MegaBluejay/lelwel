@@ -103,6 +103,59 @@ fn syntax_error_message(expected: &[String]) -> String {
     format!("\"{}\"", escape(&msg))
 }
 
+fn gen_pattern(tokens: &BTreeSet<TokenName<'_>>) -> TokenStream {
+    let idents: Vec<_> = tokens
+        .iter()
+        .map(|s| {
+            let ident = proc_macro2::Ident::new(&s.0, proc_macro2::Span::call_site());
+            quote!(Token::#ident)
+        })
+        .collect();
+    quote!(#(#idents)|*)
+}
+
+fn gen_error_message<'a>(
+    tokens: &BTreeSet<TokenName<'a>>,
+    token_symbols: &FxHashMap<&str, &str>,
+) -> TokenStream {
+    let expected: Vec<_> = tokens
+        .iter()
+        .filter_map(|s| token_symbols.get(s.0.as_ref()))
+        .map(|sym| {
+            if sym.starts_with('<') && sym.ends_with('>') && sym.len() > 2 {
+                sym.to_string()
+            } else {
+                format!("'{}'", sym)
+            }
+        })
+        .collect();
+    gen_syntax_error_message(&expected)
+}
+
+fn gen_syntax_error_message(expected: &[String]) -> TokenStream {
+    let msg = if expected.is_empty() {
+        "invalid syntax".to_string()
+    } else if expected.len() == 1 {
+        format!("invalid syntax, expected: {}", expected[0])
+    } else {
+        format!("invalid syntax, expected one of: {}", expected.join(", "))
+    };
+    let escaped = escape(&msg);
+    quote!(#escaped)
+}
+
+fn self_ident() -> proc_macro2::Ident {
+    quote::format_ident!("self")
+}
+
+fn parser_ident() -> proc_macro2::Ident {
+    quote::format_ident!("parser")
+}
+
+fn snake_to_pascal_case_ident(name: &str) -> proc_macro2::Ident {
+    quote::format_ident!("{}", snake_to_pascal_case(name))
+}
+
 pub struct RustOutput {}
 
 impl RustOutput {
