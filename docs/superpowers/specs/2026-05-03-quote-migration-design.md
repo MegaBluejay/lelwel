@@ -21,7 +21,7 @@ Two phases:
 **New dependencies:**
 - `quote` — quasi-quoting for TokenStream generation
 - `proc_macro2` — TokenStream type usable outside proc_macro context
-- `syn` — only for `parse_file()` in the final pretty-print step (Phase 2 may use more syn types)
+- `syn` — for `parse_file()` to validate and format generated code (Phase 2 may use more syn types)
 - `prettyplease` — format the generated output for readability
 
 **Removed:**
@@ -44,10 +44,12 @@ Two phases:
 
 Each step is followed by `cargo test --workspace`.
 
-### Step 1: Add dependencies, introduce infrastructure
+### Step 1: Add dependencies, introduce parse+format at top level
 - Add `quote`, `proc_macro2`, `syn`, `prettyplease` to `Cargo.toml`
-- Define `SELF` and `PARSER` constant idents
-- Add `use` imports for quote/proc_macro2
+- In `RustOutput::run()`, after generating the output string, parse it with `syn::parse_file()` and format with `prettyplease::unparse()` before writing to disk
+- This immediately reformats all generated code. Fix any tests that assert on specific formatting
+- This validates the parse→format pipeline works before any quote conversion begins
+- Rationale: during incremental conversion, helpers produce TokenStream → `.to_string()` → concatenated with still-string code → `syn::parse_file()` → `prettyplease::unparse()`. Getting this step in first isolates formatting-related test failures
 
 ### Step 2: Convert helper functions (no I/O)
 - Add `gen_pattern() -> TokenStream` alongside `Generator::pattern()`
