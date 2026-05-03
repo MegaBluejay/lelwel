@@ -140,8 +140,8 @@ fn gen_syntax_error_message(expected: &[String]) -> TokenStream {
     } else {
         format!("invalid syntax, expected one of: {}", expected.join(", "))
     };
-    let escaped = escape(&msg);
-    quote!(#escaped)
+    let unescaped = msg.replace(r"\\", r"\").replace(r"\'", "'");
+    quote!(#unescaped)
 }
 
 fn self_ident() -> proc_macro2::Ident {
@@ -777,19 +777,9 @@ impl RustOutput {
         if !is_start {
             output.write_all(Self::gen_node_kind_decl(has_rule_rename, name, true).to_string().as_bytes())?;
         }
-        Self::output_regex(
-            cst,
-            sema,
-            regex,
-            output,
-            2,
-            token_symbols,
-            false,
-            name,
-            elision,
-            "self",
-            has_rule_rename,
-        )?;
+        output.write_all(Self::gen_regex(
+            cst, sema, regex, token_symbols, false, name, elision, &self_ident(), has_rule_rename,
+        ).to_string().as_bytes())?;
         output.write_all(Self::gen_elision_check(has_rule_rename, name, &self_ident(), is_start, elision).to_string().as_bytes())?;
         Ok(())
     }
@@ -858,14 +848,19 @@ impl RustOutput {
                 continue;
             }
             let predict = &sema.predict_sets[&alt_op.syntax()];
-            let predicate = Self::get_predicate(cst, name, alt_op, "parser");
-            advance_error_set = if predicate.is_empty() {
+            let predicate = Self::gen_predicate(cst, name, alt_op, &parser_ident());
+            advance_error_set = if predicate.is_none() {
                 advance_error_set.difference(predict).cloned().collect()
             } else {
                 advance_error_set.union(predict).cloned().collect()
             };
+            let predict_pat = gen_pattern(predict);
+            let pred_str = match &predicate {
+                Some(p) => format!(" if {}", p.to_string()),
+                None => String::new(),
+            };
             output.write_all(
-                format!("{}{predicate} => {{\n", predict.pattern(0),)
+                format!("{}{} => {{\n", predict_pat.to_string(), pred_str)
                     .indent(4)
                     .as_bytes(),
             )?;
@@ -889,35 +884,15 @@ impl RustOutput {
                             .as_bytes(),
                         )?;
                     } else {
-                        Self::output_regex(
-                            cst,
-                            sema,
-                            concat_op,
-                            output,
-                            5,
-                            token_symbols,
-                            false,
-                            name,
-                            elision,
-                            "parser",
-                            has_rule_rename,
-                        )?;
+                        output.write_all(Self::gen_regex(
+                            cst, sema, concat_op, token_symbols, false, name, elision, &parser_ident(), has_rule_rename,
+                        ).to_string().as_bytes())?;
                     }
                 }
             } else {
-                Self::output_regex(
-                    cst,
-                    sema,
-                    alt_op,
-                    output,
-                    5,
-                    token_symbols,
-                    false,
-                    name,
-                    elision,
-                    "parser",
-                    has_rule_rename,
-                )?;
+                output.write_all(Self::gen_regex(
+                    cst, sema, alt_op, token_symbols, false, name, elision, &parser_ident(), has_rule_rename,
+                ).to_string().as_bytes())?;
             }
 
             output.write_all(Self::gen_elision_check(has_rule_rename, name, &parser_ident(), false, elision).to_string().as_bytes())?;
@@ -971,11 +946,17 @@ impl RustOutput {
                 }
                 if is_first {
                     is_first = false;
+                    let pred = Self::gen_predicate(cst, name, branch.regex(), &parser_ident());
+                    let predict_pat = gen_pattern(&sema.predict_sets[&concat_op.syntax()]);
+                    let pred_str = match &pred {
+                        Some(p) => format!(" if {}", p.to_string()),
+                        None => String::new(),
+                    };
                     output.write_all(
                         format!(
                             "{}{} => {{\n",
-                            sema.predict_sets[&concat_op.syntax()].pattern(0),
-                            Self::get_predicate(cst, name, branch.regex(), "parser")
+                            predict_pat.to_string(),
+                            pred_str
                         )
                         .indent(5)
                         .as_bytes(),
@@ -1009,19 +990,9 @@ impl RustOutput {
                         .as_bytes(),
                     )?;
                 } else {
-                    Self::output_regex(
-                        cst,
-                        sema,
-                        concat_op,
-                        output,
-                        6,
-                        token_symbols,
-                        false,
-                        name,
-                        RuleNodeElision::None,
-                        "parser",
-                        has_rule_rename,
-                    )?;
+                    output.write_all(Self::gen_regex(
+                        cst, sema, concat_op, token_symbols, false, name, RuleNodeElision::None, &parser_ident(), has_rule_rename,
+                    ).to_string().as_bytes())?;
                 }
             }
             output.write_all(Self::gen_cst_close(has_rule_rename, name, true, &parser_ident(), false).to_string().as_bytes())?;
@@ -1160,6 +1131,31 @@ impl RustOutput {
         Ok(())
     }
 
+    fn gen_predicate(cst: &Cst<'_>, rule_name: &str, regex: Regex, parser_name: &proc_macro2::Ident) -> Option<TokenStream> {
+        match regex {
+            Regex::Concat(concat) => match concat.operands(cst).next().unwrap() {
+                Regex::Predicate(pred) => {
+                    if pred.is_true(cst) {
+                        Some(quote! { true })
+                    } else {
+                        let num = &pred.value(cst).unwrap().0[1..];
+                        let method = quote::format_ident!("predicate_{}_{}", rule_name, num);
+                        Some(quote! { #parser_name.#method() })
+                    }
+                }
+                _ => None,
+            },
+            Regex::Paren(paren) => {
+                if let Some(inner) = paren.inner(cst) {
+                    Self::gen_predicate(cst, rule_name, inner, parser_name)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn get_predicate(cst: &Cst<'_>, rule_name: &str, regex: Regex, parser_name: &str) -> String {
         match regex {
             Regex::Concat(concat) => match concat.operands(cst).next().unwrap() {
@@ -1183,6 +1179,80 @@ impl RustOutput {
                 }
             }
             _ => "".to_string(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gen_recovering_operation(
+        cst: &Cst<'_>,
+        sema: &SemanticData<'_>,
+        regex: Regex,
+        token_symbols: &FxHashMap<&str, &str>,
+        open_before: bool,
+        rule_name: &str,
+        rule_elision: RuleNodeElision,
+        parser_name: &proc_macro2::Ident,
+        has_rule_rename: bool,
+        op: Regex,
+        ordered_choice_return: TokenStream,
+        is_loop: bool,
+    ) -> TokenStream {
+        let first_pattern = gen_pattern(&sema.first_sets[&op.syntax()]);
+        let predicate = Self::gen_predicate(cst, rule_name, op, parser_name);
+        let open_before_block = if open_before {
+            quote! {
+                if m.is_none() {
+                    m = Some(#parser_name.open_before(lhs, diags));
+                }
+            }
+        } else {
+            TokenStream::new()
+        };
+        let body = Self::gen_regex(
+            cst, sema, op, token_symbols, false, rule_name, rule_elision, parser_name, has_rule_rename,
+        );
+        let break_if_not_loop = if !is_loop {
+            quote! { break; }
+        } else {
+            TokenStream::new()
+        };
+        let follow_pattern = gen_pattern(&sema.follow_sets[&regex.syntax()]);
+        let expected = if is_loop {
+            gen_error_message(&sema.follow_sets[&op.syntax()], token_symbols)
+        } else {
+            gen_error_message(&sema.predict_sets[&regex.syntax()], token_symbols)
+        };
+        let recovery = &sema.recovery_sets[&regex.syntax()];
+        let recovery_arm = if recovery.is_empty() {
+            TokenStream::new()
+        } else {
+            let recovery_pattern = gen_pattern(recovery);
+            let ocr = ordered_choice_return.clone();
+            quote! {
+                | #recovery_pattern => {
+                    #ocr
+                    #parser_name.error(diags, err![#parser_name, #expected]);
+                    break;
+                }
+            }
+        };
+        let ocr = ordered_choice_return;
+        let first_arm = match predicate {
+            Some(pred) => quote! { #first_pattern if #pred => { #open_before_block #body #break_if_not_loop } },
+            None => quote! { #first_pattern => { #open_before_block #body #break_if_not_loop } },
+        };
+        quote! {
+            loop {
+                match #parser_name.current {
+                    #first_arm
+                    #follow_pattern => break,
+                    #recovery_arm
+                    _ => {
+                        #ocr
+                        #parser_name.advance_with_error(diags, err![#parser_name, #expected]);
+                    }
+                }
+            }
         }
     }
 
@@ -1274,6 +1344,322 @@ impl RustOutput {
             .indent(level)
             .as_bytes(),
         )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gen_regex(
+        cst: &Cst<'_>,
+        sema: &SemanticData<'_>,
+        regex: Regex,
+        token_symbols: &FxHashMap<&str, &str>,
+        open_before: bool,
+        rule_name: &str,
+        rule_elision: RuleNodeElision,
+        parser_name: &proc_macro2::Ident,
+        has_rule_rename: bool,
+    ) -> TokenStream {
+        let in_choice = sema.used_in_ordered_choice.contains(&regex.syntax());
+        let expect_macro = if in_choice {
+            quote::format_ident!("try_expect")
+        } else {
+            quote::format_ident!("expect")
+        };
+        let ordered_choice_return = if in_choice {
+            quote! {
+                if #parser_name.in_ordered_choice {
+                    return None;
+                }
+            }
+        } else {
+            TokenStream::new()
+        };
+        match regex {
+            Regex::Name(name) => {
+                let decl = sema.decl_bindings[&name.syntax()];
+                if let Some(rule) = RuleDecl::cast(cst, decl) {
+                    let name = rule.name(cst).unwrap().0;
+                    let rule_in_choice = sema.used_in_ordered_choice.contains(&rule.syntax());
+                    let rule_fn = quote::format_ident!("rule_{}", name);
+                    if rule_in_choice && in_choice {
+                        quote! { #parser_name.#rule_fn(diags)?; }
+                    } else {
+                        quote! { #parser_name.#rule_fn(diags); }
+                    }
+                } else if let Some(token) = TokenDecl::cast(cst, decl) {
+                    let name = token.name(cst).unwrap().0;
+                    let sym = token
+                        .symbol(cst)
+                        .map_or(name, |(sym, _)| &sym[1..sym.len() - 1]);
+                    let token_ident = quote::format_ident!("{}", name);
+                    let error_msg = gen_syntax_error_message(&[sym.to_string()]);
+                    quote! { #expect_macro!(#token_ident, #error_msg, #parser_name, diags); }
+                } else {
+                    TokenStream::new()
+                }
+            }
+            Regex::Symbol(sym) => {
+                let decl = sema.decl_bindings[&sym.syntax()];
+                if let Some(token) = TokenDecl::cast(cst, decl) {
+                    let name = token.name(cst).unwrap().0;
+                    let sym_val = token.symbol(cst).unwrap().0;
+                    let token_ident = quote::format_ident!("{}", name);
+                    let error_msg = gen_syntax_error_message(&[sym_val.to_string()]);
+                    quote! { #expect_macro!(#token_ident, #error_msg, #parser_name, diags); }
+                } else {
+                    TokenStream::new()
+                }
+            }
+            Regex::Action(action) => {
+                let num = &action.value(cst).unwrap().0[1..];
+                let method = quote::format_ident!("action_{}_{}", rule_name, num);
+                quote! { #parser_name.#method(diags); }
+            }
+            Regex::Assertion(assertion) => {
+                let num = &assertion.value(cst).unwrap().0[1..];
+                let method = quote::format_ident!("assertion_{}_{}", rule_name, num);
+                let ocr = ordered_choice_return.clone();
+                quote! {
+                    if let Some(diag) = #parser_name.#method() {
+                        #ocr
+                        #parser_name.error_since_advance = true;
+                        diags.push(diag);
+                    }
+                }
+            }
+            Regex::NodeRename(rename) => {
+                let name = &rename.value(cst).unwrap().0[1..];
+                if !name.is_empty() {
+                    let variant = snake_to_pascal_case_ident(name);
+                    quote! { node_kind = Rule::#variant; }
+                } else {
+                    TokenStream::new()
+                }
+            }
+            Regex::NodeElision(_) => {
+                if rule_elision == RuleNodeElision::Conditional {
+                    quote! { elide = true; }
+                } else {
+                    TokenStream::new()
+                }
+            }
+            Regex::NodeMarker(marker) => {
+                let number = marker.number(cst);
+                let mark_ident = quote::format_ident!("m{}", number);
+                quote! { let #mark_ident = #parser_name.mark(diags); }
+            }
+            Regex::NodeCreation(creation) => {
+                let node_name = creation.node_name(cst).unwrap_or(rule_name);
+                let mark = if creation.whole_rule(cst) {
+                    quote::format_ident!("start")
+                } else {
+                    quote::format_ident!("m{}", creation.number(cst).unwrap())
+                };
+                let variant = snake_to_pascal_case_ident(node_name);
+                let create_fn = quote::format_ident!("create_node_{}", node_name);
+                quote! {
+                    let open_node = #parser_name.open_before(#mark, diags);
+                    #parser_name.close(open_node, Rule::#variant, diags);
+                    #parser_name.#create_fn(NodeRef(#mark.0), diags);
+                }
+            }
+            Regex::Commit(_) => {
+                quote! { #parser_name.in_ordered_choice = false; }
+            }
+            Regex::Return(_) => {
+                let error_handling = match rule_elision {
+                    RuleNodeElision::None => {
+                        quote! {
+                            let closed = #parser_name.close(m, Rule::Error, diags);
+                            #parser_name.create_node_error(NodeRef(closed.0), diags);
+                        }
+                    }
+                    RuleNodeElision::Conditional => {
+                        quote! {
+                            if !elide {
+                                let m = #parser_name.open_before(start, diags);
+                                let closed = #parser_name.close(m, Rule::Error, diags);
+                                #parser_name.create_node_error(NodeRef(closed.0), diags);
+                            }
+                        }
+                    }
+                    RuleNodeElision::Unconditional => TokenStream::new(),
+                };
+                let return_stmt = if in_choice {
+                    quote! { return None; }
+                } else {
+                    quote! { return; }
+                };
+                quote! {
+                    if #parser_name.active_error() {
+                        #error_handling
+                        #return_stmt
+                    }
+                }
+            }
+            Regex::Predicate(_) => TokenStream::new(),
+            Regex::Concat(concat) => {
+                let ops: Vec<_> = concat
+                    .operands(cst)
+                    .map(|op| {
+                        Self::gen_regex(
+                            cst, sema, op, token_symbols, false, rule_name, rule_elision, parser_name, has_rule_rename,
+                        )
+                    })
+                    .collect();
+                quote! { #(#ops)* }
+            }
+            Regex::Paren(paren) => {
+                if let Some(inner) = paren.inner(cst) {
+                    Self::gen_regex(
+                        cst, sema, inner, token_symbols, false, rule_name, rule_elision, parser_name, has_rule_rename,
+                    )
+                } else {
+                    TokenStream::new()
+                }
+            }
+            Regex::Alternation(alt) => {
+                let mut arms = Vec::new();
+                let mut advance_error_set = BTreeSet::new();
+                for op in alt.operands(cst) {
+                    let predict = &sema.predict_sets[&op.syntax()];
+                    let predicate = Self::gen_predicate(cst, rule_name, op, parser_name);
+                    advance_error_set = if predicate.is_none() {
+                        advance_error_set.difference(predict).cloned().collect()
+                    } else {
+                        advance_error_set.union(predict).cloned().collect()
+                    };
+                    let pattern = gen_pattern(predict);
+                    let body = Self::gen_regex(
+                        cst, sema, op, token_symbols, false, rule_name, rule_elision, parser_name, has_rule_rename,
+                    );
+                    let arm = match predicate {
+                        Some(pred) => quote! { #pattern if #pred => { #body } },
+                        None => quote! { #pattern => { #body } },
+                    };
+                    arms.push(arm);
+                }
+                let advance_error_arm = if !advance_error_set.is_empty() {
+                    let pattern = gen_pattern(&advance_error_set);
+                    let ocr = ordered_choice_return.clone();
+                    let msg = gen_syntax_error_message(&[]);
+                    quote! {
+                        #pattern => {
+                            #ocr
+                            #parser_name.advance_with_error(diags, err![#parser_name, #msg]);
+                        }
+                    }
+                } else {
+                    TokenStream::new()
+                };
+                let expected = gen_error_message(&sema.predict_sets[&regex.syntax()], token_symbols);
+                let ocr = ordered_choice_return;
+                quote! {
+                    match #parser_name.current {
+                        #(#arms)*
+                        #advance_error_arm
+                        _ => {
+                            #ocr
+                            #parser_name.error(diags, err![#parser_name, #expected]);
+                        }
+                    }
+                }
+            }
+            Regex::OrderedChoice(choice) => {
+                let ops: Vec<_> = choice.operands(cst).collect();
+                let elision_state = if rule_elision == RuleNodeElision::Conditional {
+                    quote! { let elision_state = elide; }
+                } else {
+                    TokenStream::new()
+                };
+                let elision_restore = if rule_elision == RuleNodeElision::Conditional {
+                    quote! { elide = elision_state; }
+                } else {
+                    TokenStream::new()
+                };
+                let node_kind_state = if has_rule_rename {
+                    quote! { let node_kind_state = node_kind; }
+                } else {
+                    TokenStream::new()
+                };
+                let node_kind_restore = if has_rule_rename {
+                    quote! { node_kind = node_kind_state; }
+                } else {
+                    TokenStream::new()
+                };
+                let mut branches = Vec::new();
+                for op in &ops[..ops.len() - 1] {
+                    let predict = &sema.predict_sets[&op.syntax()];
+                    let predict_pattern = gen_pattern(predict);
+                    let body = Self::gen_regex(
+                        cst, sema, *op, token_symbols, false, rule_name, rule_elision, parser_name, has_rule_rename,
+                    );
+                    branches.push(quote! {
+                        if matches!(#parser_name.current, #predict_pattern) {
+                            if (|| {
+                                #body
+                                Some(())
+                            })().is_some() {
+                                break 'ordered_choice;
+                            }
+                            #parser_name.set_state(&state, diags);
+                            #elision_restore
+                            #node_kind_restore
+                        }
+                    });
+                }
+                let last_op = *ops.last().unwrap();
+                let last_predict = &sema.predict_sets[&last_op.syntax()];
+                let last_predict_pattern = gen_pattern(last_predict);
+                let last_body = Self::gen_regex(
+                    cst, sema, last_op, token_symbols, false, rule_name, rule_elision, parser_name, has_rule_rename,
+                );
+                let invalid_msg = gen_syntax_error_message(&[]);
+                quote! {
+                    #parser_name.in_ordered_choice = true;
+                    'ordered_choice: {
+                        let state = #parser_name.get_state(diags);
+                        #elision_state
+                        #node_kind_state
+                        #(#branches)*
+                        #parser_name.in_ordered_choice = false;
+                        if matches!(#parser_name.current, #last_predict_pattern) {
+                            #last_body
+                        } else {
+                            #parser_name.advance_with_error(diags, err![#parser_name, #invalid_msg]);
+                        }
+                    }
+                }
+            }
+            Regex::Star(star) => {
+                Self::gen_recovering_operation(
+                    cst, sema, regex, token_symbols, open_before,
+                    rule_name, rule_elision, parser_name, has_rule_rename,
+                    star.operand(cst).unwrap(), ordered_choice_return, true,
+                )
+            }
+            Regex::Plus(plus) => {
+                let op = plus.operand(cst).unwrap();
+                let op_tokens = Self::gen_regex(
+                    cst, sema, op, token_symbols, false, rule_name, rule_elision, parser_name, has_rule_rename,
+                );
+                let loop_tokens = Self::gen_recovering_operation(
+                    cst, sema, regex, token_symbols, open_before,
+                    rule_name, rule_elision, parser_name, has_rule_rename,
+                    op, ordered_choice_return, true,
+                );
+                quote! {
+                    #op_tokens
+                    #loop_tokens
+                }
+            }
+            Regex::Optional(opt) => {
+                Self::gen_recovering_operation(
+                    cst, sema, regex, token_symbols, open_before,
+                    rule_name, rule_elision, parser_name, has_rule_rename,
+                    opt.operand(cst).unwrap(), ordered_choice_return, false,
+                )
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
