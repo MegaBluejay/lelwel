@@ -1271,80 +1271,649 @@ impl RustOutput {
                 .and_modify(|val| *val |= in_choice)
                 .or_insert(in_choice);
         }
-        let mut rules = "".to_string();
-        let mut rules_fmt = "".to_string();
-        let mut rules_create = "".to_string();
-        let mut rules_delete = if contains_ordered_choice {
-            "match _rule {".to_string()
+        let rule_variants: Vec<_> = rule_names
+            .keys()
+            .map(|n| snake_to_pascal_case_ident(n))
+            .collect();
+        let debug_arms: Vec<_> = rule_names
+            .iter()
+            .map(|(n, _)| {
+                let n = *n;
+                let variant = snake_to_pascal_case_ident(n);
+                quote! { Rule::#variant => write!(f, #n), }
+            })
+            .collect();
+        let skip_idents: Vec<_> = sema
+            .skipped
+            .iter()
+            .map(|t| {
+                let name = quote::format_ident!("{}", t.name(cst).unwrap().0);
+                quote! { | Token::#name }
+            })
+            .collect();
+        let create_arms: Vec<_> = rule_names
+            .keys()
+            .map(|n| {
+                let variant = snake_to_pascal_case_ident(*n);
+                let create_fn = quote::format_ident!("create_node_{}", n);
+                quote! { Rule::#variant => self.#create_fn(node_ref, diags), }
+            })
+            .collect();
+        let delete_arms: Vec<_> = rule_names
+            .iter()
+            .filter(|(_, in_choice)| **in_choice)
+            .map(|(n, _)| {
+                let n = *n;
+                let variant = snake_to_pascal_case_ident(n);
+                let delete_fn = quote::format_ident!("delete_node_{}", n);
+                quote! { Rule::#variant => self.#delete_fn(_node_ref), }
+            })
+            .collect();
+        let delete_covered = rule_names.iter().all(|(_, in_choice)| *in_choice);
+        let delete_body = if contains_ordered_choice {
+            if delete_covered {
+                quote! { match _rule { #(#delete_arms)* } }
+            } else {
+                quote! { match _rule { #(#delete_arms)* _ => {} } }
+            }
         } else {
-            "".to_string()
+            quote! {}
         };
-        let mut delete_covered = true;
-        for (rule_name, in_choice) in rule_names.iter() {
-            let pascal_case_name = &snake_to_pascal_case(rule_name);
-
-            rules += "\n    ";
-            rules += pascal_case_name;
-            rules += ",";
-
-            rules_fmt += "\n    Rule::";
-            rules_fmt += pascal_case_name;
-            rules_fmt += " => write!(f, \"";
-            rules_fmt += rule_name;
-            rules_fmt += "\"),";
-
-            rules_create += "\n            Rule::";
-            rules_create += pascal_case_name;
-            rules_create += " => self.create_node_";
-            rules_create += rule_name;
-            rules_create += "(node_ref, diags),";
-
-            delete_covered &= *in_choice;
-            if *in_choice {
-                rules_delete += "\n            Rule::";
-                rules_delete += pascal_case_name;
-                rules_delete += " => self.delete_node_";
-                rules_delete += rule_name;
-                rules_delete += "(_node_ref),";
-            }
-        }
-        if contains_ordered_choice {
-            if !delete_covered {
-                rules_delete += "\n            _ => {}";
-            }
-            rules_delete += "\n         }"
-        }
-
-        let mut skip = "".to_string();
-        for token in sema.skipped.iter() {
-            skip += " | Token::";
-            skip += token.name(cst).unwrap().0;
-        }
-
         let start_rule = sema.start_rule.unwrap().name(cst).unwrap().0;
-        let start_rule_pascal_case = snake_to_pascal_case(start_rule);
+        let start_rule_fn = quote::format_ident!("rule_{}", start_rule);
+        let start_rule_variant = snake_to_pascal_case_ident(start_rule);
+        let parts: Vec<_> = sema
+            .parts
+            .iter()
+            .map(|r| Self::gen_parts(cst, *r))
+            .collect();
+        let rules: Vec<_> = file
+            .rule_decls(cst)
+            .map(|r| Self::gen_rule(cst, sema, r, &token_symbols))
+            .collect();
+        let callbacks = Self::gen_parser_callbacks(sema, true, rule_names);
 
-        let mut source = format!(
-            include_str!("../skeleton/generated.rs"),
-            rules,
-            skip,
-            start_rule,
-            start_rule_pascal_case,
-            rules_fmt,
-            rules_create,
-            rules_delete,
-        );
+        quote! {
+            macro_rules! err {
+                [$self:expr, $msg:literal] => {
+                    $self.create_diagnostic($self.span(), String::from($msg))
+                }
+            }
 
-        for rule in sema.parts.iter() {
-            source.push_str(&Self::gen_parts(cst, *rule).to_string());
+            #[derive(Copy, Clone, PartialEq, Eq)]
+            #[allow(dead_code)]
+            pub enum Rule {
+                #(#rule_variants,)*
+            }
+
+            #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+            pub struct NodeRef(pub usize);
+
+            impl NodeRef {
+                #[allow(dead_code)]
+                pub const ROOT: NodeRef = NodeRef(0);
+            }
+
+            #[cfg(target_pointer_width = "64")]
+            #[derive(Copy, Clone)]
+            pub struct CstIndex([u8; 6]);
+
+            #[cfg(any(target_pointer_width = "16", target_pointer_width = "32"))]
+            #[derive(Copy, Clone)]
+            pub struct CstIndex(usize);
+
+            impl std::fmt::Debug for CstIndex {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+                    usize::from(*self).fmt(f)
+                }
+            }
+
+            impl From<CstIndex> for usize {
+                #[cfg(target_pointer_width = "64")]
+                #[inline]
+                fn from(value: CstIndex) -> Self {
+                    let [b0, b1, b2, b3, b4, b5] = value.0;
+                    usize::from_le_bytes([b0, b1, b2, b3, b4, b5, 0, 0])
+                }
+                #[cfg(any(target_pointer_width = "16", target_pointer_width = "32"))]
+                #[inline]
+                fn from(value: CstIndex) -> Self {
+                    value.0
+                }
+            }
+            impl From<usize> for CstIndex {
+                #[cfg(target_pointer_width = "64")]
+                #[inline]
+                fn from(value: usize) -> Self {
+                    let [b0, b1, b2, b3, b4, b5, b6, b7] = value.to_le_bytes();
+                    debug_assert!(b6 == 0 && b7 == 0);
+                    Self([b0, b1, b2, b3, b4, b5])
+                }
+                #[cfg(any(target_pointer_width = "16", target_pointer_width = "32"))]
+                #[inline]
+                fn from(value: usize) -> Self {
+                    Self(value)
+                }
+            }
+
+            #[derive(Debug, Copy, Clone)]
+            pub enum Node {
+                Rule(Rule, CstIndex),
+                Token(Token, CstIndex),
+            }
+
+            #[derive(Clone, Copy)]
+            struct MarkOpened(usize);
+            #[derive(Clone, Copy)]
+            struct MarkClosed(usize);
+            #[derive(Clone)]
+            struct MarkTruncation {
+                node_count: usize,
+                token_count: usize,
+                non_skip_len: usize,
+            }
+
+            #[derive(Default)]
+            pub struct CstChildren<'a> {
+                iter: std::slice::Iter<'a, Node>,
+                offset: usize,
+            }
+            impl Iterator for CstChildren<'_> {
+                type Item = NodeRef;
+
+                fn next(&mut self) -> Option<Self::Item> {
+                    let offset = self.offset;
+                    self.offset += 1;
+                    if let Some(node) = self.iter.next() {
+                        if let Node::Rule(_, end_offset) = node {
+                            let end_offset = usize::from(*end_offset);
+                            if end_offset > 0 {
+                                self.iter.nth(end_offset.saturating_sub(1));
+                                self.offset += end_offset;
+                            }
+                        }
+                        Some(NodeRef(offset))
+                    } else {
+                        None
+                    }
+                }
+            }
+
+            pub type Span = core::ops::Range<usize>;
+
+            #[derive(Debug)]
+            pub struct CstData {
+                spans: Vec<Span>,
+                nodes: Vec<Node>,
+                token_count: usize,
+                non_skip_len: usize,
+            }
+            #[allow(dead_code)]
+            impl CstData {
+                fn new(spans: Vec<Span>) -> Self {
+                    let nodes = Vec::with_capacity(spans.len() * 2);
+                    Self {
+                        spans,
+                        nodes,
+                        token_count: 0,
+                        non_skip_len: 0,
+                    }
+                }
+                fn open(&mut self) -> MarkOpened {
+                    let mark = MarkOpened(self.nodes.len());
+                    self.nodes.push(Node::Rule(Rule::Error, 0.into()));
+                    self.non_skip_len = self.nodes.len();
+                    mark
+                }
+                fn close(&mut self, mark: MarkOpened, rule: Rule) -> MarkClosed {
+                    let len = self.non_skip_len - 1;
+                    self.nodes[mark.0] = Node::Rule(
+                        rule,
+                        if mark.0 > len {
+                            self.non_skip_len += mark.0 - len;
+                            0
+                        } else {
+                            len - mark.0
+                        }
+                        .into(),
+                    );
+                    MarkClosed(mark.0)
+                }
+                fn close_root(&mut self, mark: MarkOpened, rule: Rule) -> MarkClosed {
+                    self.nodes[mark.0] = Node::Rule(rule, (self.nodes.len() - 1 - mark.0).into());
+                    MarkClosed(mark.0)
+                }
+                fn advance(&mut self, token: Token, skip: bool) {
+                    self.nodes.push(Node::Token(token, self.token_count.into()));
+                    self.token_count += 1;
+                    if !skip {
+                        self.non_skip_len = self.nodes.len();
+                    }
+                }
+                fn open_before(&mut self, mark: MarkClosed) -> MarkOpened {
+                    self.nodes.insert(mark.0, Node::Rule(Rule::Error, 0.into()));
+                    self.non_skip_len += 1;
+                    MarkOpened(mark.0)
+                }
+                fn mark(&self) -> MarkClosed {
+                    MarkClosed(self.nodes.len())
+                }
+                fn mark_truncation(&self) -> MarkTruncation {
+                    MarkTruncation {
+                        node_count: self.nodes.len(),
+                        token_count: self.token_count,
+                        non_skip_len: self.non_skip_len,
+                    }
+                }
+                fn truncate(&mut self, mark: MarkTruncation) {
+                    self.nodes.truncate(mark.node_count);
+                    self.token_count = mark.token_count;
+                    self.non_skip_len = mark.non_skip_len;
+                }
+                pub fn children(&self, node_ref: NodeRef) -> CstChildren<'_> {
+                    let iter = if let Node::Rule(_, end_offset) = self.nodes[node_ref.0] {
+                        self.nodes[node_ref.0 + 1..node_ref.0 + usize::from(end_offset) + 1].iter()
+                    } else {
+                        std::slice::Iter::default()
+                    };
+                    CstChildren {
+                        iter,
+                        offset: node_ref.0 + 1,
+                    }
+                }
+                pub fn get(&self, node_ref: NodeRef) -> Node {
+                    self.nodes[node_ref.0]
+                }
+                pub fn span(&self, node_ref: NodeRef) -> Span {
+                    fn find_token<'a>(mut iter: impl Iterator<Item = &'a Node>) -> Option<usize> {
+                        iter.find_map(|node| match node {
+                            Node::Rule(..) => None,
+                            Node::Token(_, idx) => Some(usize::from(*idx)),
+                        })
+                    }
+                    match self.nodes[node_ref.0] {
+                        Node::Token(_, idx) => self.spans[usize::from(idx)].clone(),
+                        Node::Rule(_, end_offset) => {
+                            let end = node_ref.0 + usize::from(end_offset);
+                            let first = find_token(self.nodes[node_ref.0 + 1..=end].iter());
+                            let last = find_token(self.nodes[node_ref.0 + 1..=end].iter().rev());
+                            if let (Some(first), Some(last)) = (first, last) {
+                                self.spans[first].start..self.spans[last].end
+                            } else {
+                                let offset = find_token(self.nodes[..node_ref.0].iter().rev())
+                                    .map_or(0, |before| self.spans[before].end);
+                                offset..offset
+                            }
+                        }
+                    }
+                }
+                pub fn match_token(&self, node_ref: NodeRef, matched_token: Token) -> Option<Span> {
+                    match self.nodes[node_ref.0] {
+                        Node::Token(token, idx) if token == matched_token => {
+                            Some(self.spans[usize::from(idx)].clone())
+                        }
+                        _ => None,
+                    }
+                }
+                pub fn match_rule(&self, node_ref: NodeRef, matched_rule: Rule) -> bool {
+                    matches!(self.nodes[node_ref.0], Node::Rule(rule, _) if rule == matched_rule)
+                }
+            }
+
+            #[derive(Debug)]
+            pub struct Cst<'a> {
+                source: &'a str,
+                data: CstData,
+            }
+            #[allow(dead_code)]
+            impl<'a> Cst<'a> {
+                pub fn source(&self) -> &'a str {
+                    self.source
+                }
+                pub fn into_data(self) -> CstData {
+                    self.data
+                }
+                pub fn children(&self, node_ref: NodeRef) -> CstChildren<'_> {
+                    self.data.children(node_ref)
+                }
+                pub fn get(&self, node_ref: NodeRef) -> Node {
+                    self.data.get(node_ref)
+                }
+                pub fn span(&self, node_ref: NodeRef) -> Span {
+                    self.data.span(node_ref)
+                }
+                pub fn match_token(&self, node_ref: NodeRef, matched_token: Token) -> Option<(&'a str, Span)> {
+                    self.data.match_token(node_ref, matched_token).map(|span| (&self.source[span.clone()], span))
+                }
+                pub fn match_rule(&self, node_ref: NodeRef, matched_rule: Rule) -> bool {
+                    self.data.match_rule(node_ref, matched_rule)
+                }
+                pub fn span_text(&self, span_idx: CstIndex) -> &'a str {
+                    &self.source[self.data.spans[usize::from(span_idx)].clone()]
+                }
+            }
+
+            impl std::fmt::Display for Cst<'_> {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    const DEPTH: &str = "    ";
+                    fn rec(
+                        cst: &Cst<'_>,
+                        f: &mut std::fmt::Formatter<'_>,
+                        node_ref: NodeRef,
+                        indent: usize,
+                    ) -> std::fmt::Result {
+                        match cst.get(node_ref) {
+                            Node::Rule(rule, _) => {
+                                let span = cst.span(node_ref);
+                                writeln!(f, "{}{rule:?} [{span:?}]", DEPTH.repeat(indent))?;
+                                for child_node_ref in cst.children(node_ref) {
+                                    rec(cst, f, child_node_ref, indent + 1)?;
+                                }
+                                Ok(())
+                            }
+                            Node::Token(token, idx) => {
+                                let span = &cst.data.spans[usize::from(idx)];
+                                writeln!(
+                                    f,
+                                    "{}{:?} {:?} [{:?}]",
+                                    DEPTH.repeat(indent),
+                                    token,
+                                    &cst.source[span.clone()],
+                                    span,
+                                )
+                            }
+                        }
+                    }
+                    rec(self, f, NodeRef::ROOT, 0)
+                }
+            }
+
+            impl std::fmt::Debug for Rule {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self {
+                        #(#debug_arms)*
+                    }
+                }
+            }
+
+            macro_rules! expect {
+                ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
+                    if let Token::$token = $self.current {
+                        $self.advance(false, $diags);
+                    } else {
+                        $self.error($diags, err![$self, $msg]);
+                    }
+                };
+            }
+            #[allow(unused_macros)]
+            macro_rules! try_expect {
+                ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
+                    if let Token::$token = $self.current {
+                        $self.advance(false, $diags);
+                    } else {
+                        if $self.in_ordered_choice {
+                            return None;
+                        }
+                        $self.error($diags, err![$self, $msg]);
+                    }
+                };
+            }
+
+            struct ParserState {
+                pos: usize,
+                current: Token,
+                truncation_mark: MarkTruncation,
+                diag_count: usize,
+            }
+            pub struct Parser<'a> {
+                cst: Cst<'a>,
+                tokens: Vec<Token>,
+                pos: usize,
+                current: Token,
+                end_of_input: Token,
+                max_offset: usize,
+                #[allow(dead_code)]
+                context: <Self as ParserCallbacks<'a>>::Context,
+                error_node: Option<MarkOpened>,
+                #[allow(dead_code)]
+                in_ordered_choice: bool,
+                error_since_advance: bool,
+            }
+            #[allow(clippy::while_let_loop, dead_code, unused_parens)]
+            impl<'a> Parser<'a> {
+                fn active_error(&self) -> bool {
+                    self.error_node.is_some() || self.error_since_advance
+                }
+                fn error(
+                    &mut self,
+                    diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+                    diag: <Self as ParserCallbacks<'a>>::Diagnostic
+                ) {
+                    if self.active_error() {
+                        return;
+                    }
+                    self.error_since_advance = true;
+                    diags.push(diag);
+                }
+                fn advance(&mut self, error: bool, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+                    if !error {
+                        self.close_error_node(diags);
+                        self.error_since_advance = false;
+                    }
+                    self.cst.data.advance(self.current, false);
+                    loop {
+                        self.pos += 1;
+                        match self.tokens.get(self.pos) {
+                            Some(token @ (Token::Error #(#skip_idents)*)) => {
+                                self.cst.data.advance(*token, true);
+                                continue;
+                            }
+                            Some(token) if self.predicate_skip(*token) => {
+                                self.cst.data.advance(*token, true);
+                                continue;
+                            }
+                            Some(token) => {
+                                self.current = *token;
+                                break;
+                            }
+                            None => {
+                                self.current = self.end_of_input;
+                                break;
+                            }
+                        }
+                    }
+                }
+                fn is_skipped(token: Token) -> bool {
+                    matches!(token, Token::Error #(#skip_idents)*)
+                }
+                fn init_skip(&mut self) {
+                    loop {
+                        match self.tokens.get(self.pos) {
+                            Some(token @ (Token::Error #(#skip_idents)*)) => {
+                                self.pos += 1;
+                                self.cst.data.advance(*token, true);
+                                continue;
+                            }
+                            Some(token) if self.predicate_skip(*token) => {
+                                self.pos += 1;
+                                self.cst.data.advance(*token, true);
+                                continue;
+                            }
+                            Some(token) => {
+                                self.current = *token;
+                                break;
+                            }
+                            None => {
+                                self.current = self.end_of_input;
+                                break;
+                            }
+                        }
+                    }
+                }
+                fn advance_with_error(
+                    &mut self,
+                    diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+                    diag: <Self as ParserCallbacks<'a>>::Diagnostic
+                ) {
+                    self.error(diags, diag);
+                    if self.error_node.is_none() {
+                        self.error_node = Some(self.cst.data.open());
+                    }
+                    self.advance(true, diags);
+                }
+                fn peek(&self, lookahead: usize) -> Token {
+                    self.tokens
+                        .iter()
+                        .skip(self.pos)
+                        .filter(|token| !Self::is_skipped(**token))
+                        .nth(lookahead)
+                        .map_or(self.end_of_input, |it| *it)
+                }
+                fn peek_left(&self, lookbehind: usize) -> Token {
+                    self.tokens
+                        .iter()
+                        .take(self.pos + 1)
+                        .rev()
+                        .filter(|token| !Self::is_skipped(**token))
+                        .nth(lookbehind)
+                        .map_or(self.end_of_input, |it| *it)
+                }
+                fn close_error_node(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+                    if let Some(error_node) = self.error_node {
+                        self.cst.data.close(error_node, Rule::Error);
+                        self.create_node_error(NodeRef(error_node.0), diags);
+                        self.error_node = None;
+                    }
+                }
+                fn open(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkOpened {
+                    self.close_error_node(diags);
+                    self.cst.data.open()
+                }
+                fn open_before(&mut self, mark: MarkClosed, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkOpened {
+                    self.close_error_node(diags);
+                    self.cst.data.open_before(mark)
+                }
+                fn close(&mut self, mark: MarkOpened, rule: Rule, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkClosed {
+                    self.close_error_node(diags);
+                    self.cst.data.close(mark, rule)
+                }
+                fn close_root(&mut self, mark: MarkOpened, rule: Rule, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkClosed {
+                    self.close_error_node(diags);
+                    self.cst.data.close_root(mark, rule)
+                }
+                fn mark(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkClosed {
+                    self.close_error_node(diags);
+                    self.cst.data.mark()
+                }
+                fn span(&self) -> Span {
+                    self.cst.data.spans
+                        .get(self.pos)
+                        .map_or(self.max_offset..self.max_offset, |span| span.clone())
+                }
+                fn get_state(&self, diags: &[<Self as ParserCallbacks<'a>>::Diagnostic]) -> ParserState {
+                    ParserState {
+                        pos: self.pos,
+                        current: self.current,
+                        truncation_mark: self.cst.data.mark_truncation(),
+                        diag_count: diags.len(),
+                    }
+                }
+                fn set_state(
+                    &mut self,
+                    state: &ParserState,
+                    diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>
+                ) {
+                    self.pos = state.pos;
+                    self.current = state.current;
+                    diags.truncate(state.diag_count);
+                    for i in state.truncation_mark.node_count..self.cst.data.nodes.len() {
+                        if let Node::Rule(rule, _) = self.cst.data.nodes[i] {
+                            self.delete_node(rule, NodeRef(i));
+                        }
+                    }
+                    self.cst.data.truncate(state.truncation_mark.clone());
+                }
+                fn create_node(
+                    &mut self,
+                    rule: Rule,
+                    node_ref: NodeRef,
+                    diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>
+                ) {
+                    match rule {
+                        #(#create_arms)*
+                    }
+                }
+                fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {
+                    #delete_body
+                }
+                pub fn new_with_context(
+                    source: &'a str,
+                    diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+                    mut context: <Self as ParserCallbacks<'a>>::Context,
+                ) -> Parser<'a> {
+                    let (tokens, spans) = Self::create_tokens(&mut context, source, diags);
+                    let max_offset = source.len();
+                    Self {
+                        current: Token::EOF,
+                        end_of_input: Token::EOF,
+                        cst: Cst { data: CstData::new(spans), source },
+                        tokens,
+                        pos: 0,
+                        max_offset,
+                        context,
+                        error_node: None,
+                        in_ordered_choice: false,
+                        error_since_advance: false,
+                    }
+                }
+                pub fn new(
+                    source: &'a str,
+                    diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+                ) -> Parser<'a>
+                where
+                    <Self as ParserCallbacks<'a>>::Context: Default,
+                {
+                    #[allow(clippy::unit_arg)]
+                    Self::new_with_context(source, diags, <Self as ParserCallbacks<'a>>::Context::default())
+                }
+                fn parse_rule<RuleParser: Fn(&mut Self, &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>)>(
+                    mut self,
+                    rule: RuleParser,
+                    diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+                    root: Rule,
+                ) -> Cst<'a> {
+                    let token_count = self.tokens.len();
+                    let m = self.open(diags);
+                    self.init_skip();
+
+                    rule(&mut self, diags);
+
+                    self.close_error_node(diags);
+                    if self.pos != token_count {
+                        self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
+                        let error_tree = self.open(diags);
+                        while self.pos < token_count {
+                            let token = self.tokens[self.pos];
+                            self.cst.data.advance(token, Self::is_skipped(token));
+                            self.pos += 1;
+                        }
+                        self.cst.data.close(error_tree, Rule::Error);
+                        self.create_node_error(NodeRef(error_tree.0), diags);
+                    }
+
+                    let closed = self.cst.data.close_root(m, root);
+                    self.create_node(root, NodeRef(closed.0), diags);
+                    self.cst
+                }
+                pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {
+                    self.parse_rule(|parser, diags| parser.#start_rule_fn(diags), diags, Rule::#start_rule_variant)
+                }
+                #(#parts)*
+                #(#rules)*
+            }
+
+            #callbacks
         }
-        for rule in file.rule_decls(cst) {
-            source.push_str(&Self::gen_rule(cst, sema, rule, &token_symbols).to_string());
-        }
-        source.push_str("}\n\n");
-        source.push_str(&Self::gen_parser_callbacks(sema, true, rule_names).to_string());
-
-        source.parse().expect("generated code should be valid Rust")
     }
 
 }
