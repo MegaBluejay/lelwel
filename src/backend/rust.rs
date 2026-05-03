@@ -128,18 +128,17 @@ impl RustOutput {
         let mut token_variants = Vec::new();
         token_variants.push(quote! { EOF });
         for token in file.token_decls(cst) {
-            if let Some((symbol, _)) = token.symbol(cst) {
-                if !symbol.is_empty()
-                    && !(symbol.starts_with("'<") && symbol.ends_with(">'") && symbol.len() > 4)
-                {
-                    let token_str = &symbol[1..symbol.len() - 1];
-                    let name = proc_macro2::Ident::new(
-                        token.name(cst).unwrap().0,
-                        proc_macro2::Span::call_site(),
-                    );
-                    token_variants.push(quote! { #[token(#token_str)] #name });
-                    continue;
-                }
+            if let Some((symbol, _)) = token.symbol(cst)
+                && !symbol.is_empty()
+                && !(symbol.starts_with("'<") && symbol.ends_with(">'") && symbol.len() > 4)
+            {
+                let token_str = &symbol[1..symbol.len() - 1];
+                let name = proc_macro2::Ident::new(
+                    token.name(cst).unwrap().0,
+                    proc_macro2::Span::call_site(),
+                );
+                token_variants.push(quote! { #[token(#token_str)] #name });
+                continue;
             }
             let name = proc_macro2::Ident::new(
                 token.name(cst).unwrap().0,
@@ -208,7 +207,7 @@ impl RustOutput {
     ) -> TokenStream {
         if is_trait {
             let mut create_node_methods = Vec::new();
-            for (rule_name, _) in &rule_names {
+            for rule_name in rule_names.keys() {
                 let create_fn = quote::format_ident!("create_node_{}", rule_name);
                 let doc = format!("Called when `{rule_name}` node is created.");
                 create_node_methods.push(quote! {
