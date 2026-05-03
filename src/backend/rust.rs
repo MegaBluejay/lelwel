@@ -190,7 +190,8 @@ impl RustOutput {
         let mut parser_file = BufWriter::new(std::fs::File::create(path)?);
         let skeleton = include_str!("../skeleton/parser.rs");
         parser_file.write_all(skeleton.as_bytes())?;
-        Self::output_parser_callbacks(&mut parser_file, sema, false, BTreeMap::default())
+        let callbacks_tokens = Self::gen_parser_callbacks(sema, false, BTreeMap::default());
+        parser_file.write_all(callbacks_tokens.to_string().as_bytes())
     }
 
     fn output_lexer(cst: &Cst<'_>, file: File, path: &Path) -> std::io::Result<()> {
@@ -215,6 +216,179 @@ impl RustOutput {
         let skeleton =
             include_str!("../skeleton/lexer.rs").replace("{\n    EOF,\n", &token_enumerators);
         lexer_file.write_all(skeleton.as_bytes())
+    }
+
+    fn gen_parser_callbacks(
+        sema: &SemanticData<'_>,
+        is_trait: bool,
+        rule_names: BTreeMap<&str, bool>,
+    ) -> TokenStream {
+        if is_trait {
+            let mut create_node_methods = Vec::new();
+            for (rule_name, _) in &rule_names {
+                let create_fn = quote::format_ident!("create_node_{}", rule_name);
+                let doc = format!("Called when `{rule_name}` node is created.");
+                create_node_methods.push(quote! {
+                    #[doc = #doc]
+                    fn #create_fn(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+                });
+            }
+
+            let mut delete_node_methods = Vec::new();
+            for (rule_name, in_choice) in &rule_names {
+                if *in_choice {
+                    let delete_fn = quote::format_ident!("delete_node_{}", rule_name);
+                    let doc = format!("Called when `{rule_name}` node is deleted during backtracking.");
+                    delete_node_methods.push(quote! {
+                        #[doc = #doc]
+                        fn #delete_fn(&mut self, _node_ref: NodeRef) {}
+                    });
+                }
+            }
+
+            let mut predicate_methods = Vec::new();
+            let mut seen_predicates = FxHashSet::default();
+            for (rule, num) in sema.predicates.values() {
+                if seen_predicates.contains(&(rule, num)) {
+                    continue;
+                }
+                seen_predicates.insert((rule, num));
+                let pred_fn = quote::format_ident!("predicate_{}_{}", rule, num);
+                let doc = format!("Called when semantic predicate `?{num}` in rule `{rule}` is visited.");
+                predicate_methods.push(quote! {
+                    #[doc = #doc]
+                    fn #pred_fn(&self) -> bool;
+                });
+            }
+
+            let mut action_methods = Vec::new();
+            let mut seen_actions = FxHashSet::default();
+            for (rule, num) in sema.actions.values() {
+                if seen_actions.contains(&(rule, num)) {
+                    continue;
+                }
+                seen_actions.insert((rule, num));
+                let action_fn = quote::format_ident!("action_{}_{}", rule, num);
+                let doc = format!("Called when semantic action `#{num}` in rule `{rule}` is visited.");
+                action_methods.push(quote! {
+                    #[doc = #doc]
+                    fn #action_fn(&mut self, diags: &mut Vec<Self::Diagnostic>);
+                });
+            }
+
+            let mut assertion_methods = Vec::new();
+            let mut seen_assertions = FxHashSet::default();
+            for (rule, num) in sema.assertions.values() {
+                if seen_assertions.contains(&(rule, num)) {
+                    continue;
+                }
+                seen_assertions.insert((rule, num));
+                let assert_fn = quote::format_ident!("assertion_{}_{}", rule, num);
+                let doc = format!("Called when semantic assertion `!{num}` in rule `{rule}` is visited.");
+                assertion_methods.push(quote! {
+                    #[doc = #doc]
+                    fn #assert_fn(&self) -> Option<Self::Diagnostic>;
+                });
+            }
+
+            let create_tokens_doc = "Called at the start of the parse to generate all tokens and corresponding spans.";
+            let create_diagnostic_doc = "Called when diagnostic is created.";
+            let predicate_skip_doc = "This predicate can be used to skip normal tokens.";
+
+            quote! {
+                #[allow(clippy::ptr_arg)]
+                pub trait ParserCallbacks<'a> {
+                    type Diagnostic;
+                    type Context;
+
+                    #[doc = #create_tokens_doc]
+                    fn create_tokens(context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>);
+                    #[doc = #create_diagnostic_doc]
+                    fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;
+                    #[doc = #predicate_skip_doc]
+                    fn predicate_skip(&self, _token: Token) -> bool {
+                        false
+                    }
+
+                    #(#create_node_methods)*
+
+                    #(#delete_node_methods)*
+
+                    #(#predicate_methods)*
+
+                    #(#action_methods)*
+
+                    #(#assertion_methods)*
+                }
+            }
+        } else {
+            let mut predicate_methods = Vec::new();
+            let mut seen_predicates = FxHashSet::default();
+            for (rule, num) in sema.predicates.values() {
+                if seen_predicates.contains(&(rule, num)) {
+                    continue;
+                }
+                seen_predicates.insert((rule, num));
+                let pred_fn = quote::format_ident!("predicate_{}_{}", rule, num);
+                predicate_methods.push(quote! {
+                    fn #pred_fn(&self) -> bool {
+                        todo!()
+                    }
+                });
+            }
+
+            let mut action_methods = Vec::new();
+            let mut seen_actions = FxHashSet::default();
+            for (rule, num) in sema.actions.values() {
+                if seen_actions.contains(&(rule, num)) {
+                    continue;
+                }
+                seen_actions.insert((rule, num));
+                let action_fn = quote::format_ident!("action_{}_{}", rule, num);
+                action_methods.push(quote! {
+                    fn #action_fn(&mut self, diags: &mut Vec<Self::Diagnostic>) {
+                        todo!()
+                    }
+                });
+            }
+
+            let mut assertion_methods = Vec::new();
+            let mut seen_assertions = FxHashSet::default();
+            for (rule, num) in sema.assertions.values() {
+                if seen_assertions.contains(&(rule, num)) {
+                    continue;
+                }
+                seen_assertions.insert((rule, num));
+                let assert_fn = quote::format_ident!("assertion_{}_{}", rule, num);
+                assertion_methods.push(quote! {
+                    fn #assert_fn(&self) -> Option<Self::Diagnostic> {
+                        todo!()
+                    }
+                });
+            }
+
+            quote! {
+                impl<'a> ParserCallbacks<'a> for Parser<'a> {
+                    type Diagnostic = Diagnostic;
+                    type Context = ();
+
+                    fn create_tokens(_context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>) {
+                        tokenize(source, diags)
+                    }
+                    fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic {
+                        Self::Diagnostic::error()
+                            .with_message(message)
+                            .with_label(Label::primary((), span))
+                    }
+
+                    #(#predicate_methods)*
+
+                    #(#action_methods)*
+
+                    #(#assertion_methods)*
+                }
+            }
+        }
     }
 
     fn output_parser_callbacks(
@@ -1562,6 +1736,7 @@ impl RustOutput {
         }
         output.write_all(b"}\n\n")?;
 
-        Self::output_parser_callbacks(output, sema, true, rule_names)
+        let callbacks_tokens = Self::gen_parser_callbacks(sema, true, rule_names);
+        output.write_all(callbacks_tokens.to_string().as_bytes())
     }
 }
