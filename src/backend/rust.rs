@@ -523,6 +523,18 @@ impl RustOutput {
         output.write_all(b"}\n")
     }
 
+    fn gen_node_kind_decl(has_rule_rename: bool, name: &str, is_decl: bool) -> TokenStream {
+        if !has_rule_rename {
+            return TokenStream::new();
+        }
+        let variant = snake_to_pascal_case_ident(name);
+        if is_decl {
+            quote! { let mut node_kind = Rule::#variant; }
+        } else {
+            quote! { node_kind = Rule::#variant; }
+        }
+    }
+
     fn output_node_kind_decl(
         output: &mut dyn Write,
         has_rule_rename: bool,
@@ -542,6 +554,42 @@ impl RustOutput {
             )?;
         }
         Ok(())
+    }
+
+    fn gen_cst_close(
+        has_rule_rename: bool,
+        name: &str,
+        assign_lhs: bool,
+        parser_name: &proc_macro2::Ident,
+        is_start: bool,
+    ) -> TokenStream {
+        let close_method = if is_start {
+            quote::format_ident!("close_root")
+        } else {
+            quote::format_ident!("close")
+        };
+        let variant = snake_to_pascal_case_ident(name);
+        let close_and_create = if has_rule_rename {
+            quote! {
+                let closed = #parser_name.#close_method(m, node_kind, diags);
+                #parser_name.create_node(node_kind, NodeRef(closed.0), diags);
+            }
+        } else {
+            let create_node_method = quote::format_ident!("create_node_{}", name);
+            quote! {
+                let closed = #parser_name.#close_method(m, Rule::#variant, diags);
+                #parser_name.#create_node_method(NodeRef(closed.0), diags);
+            }
+        };
+        let assign = if assign_lhs {
+            quote! { lhs = closed; }
+        } else {
+            TokenStream::new()
+        };
+        quote! {
+            #close_and_create
+            #assign
+        }
     }
 
     fn output_cst_close(
@@ -579,6 +627,33 @@ impl RustOutput {
         }
     }
 
+    fn gen_elision_init(
+        has_rule_creation: bool,
+        parser_name: &proc_macro2::Ident,
+        is_start: bool,
+        elision: RuleNodeElision,
+    ) -> TokenStream {
+        if is_start {
+            return TokenStream::new();
+        }
+        match elision {
+            RuleNodeElision::None => quote! {
+                let m = #parser_name.open(diags);
+            },
+            RuleNodeElision::Conditional => quote! {
+                let start = #parser_name.mark(diags);
+                let mut elide = false;
+            },
+            RuleNodeElision::Unconditional => {
+                if has_rule_creation {
+                    quote! { let start = #parser_name.mark(diags); }
+                } else {
+                    TokenStream::new()
+                }
+            }
+        }
+    }
+
     fn output_elision_init(
         output: &mut dyn Write,
         level: usize,
@@ -611,6 +686,33 @@ impl RustOutput {
             }
         }
         Ok(())
+    }
+
+    fn gen_elision_check(
+        has_rule_rename: bool,
+        name: &str,
+        parser_name: &proc_macro2::Ident,
+        is_start: bool,
+        elision: RuleNodeElision,
+    ) -> TokenStream {
+        if is_start {
+            return TokenStream::new();
+        }
+        match elision {
+            RuleNodeElision::None => {
+                Self::gen_cst_close(has_rule_rename, name, false, parser_name, is_start)
+            }
+            RuleNodeElision::Conditional => {
+                let close = Self::gen_cst_close(has_rule_rename, name, false, parser_name, is_start);
+                quote! {
+                    if !elide {
+                        let m = #parser_name.open_before(start, diags);
+                        #close
+                    }
+                }
+            }
+            RuleNodeElision::Unconditional => TokenStream::new(),
+        }
     }
 
     fn output_elision_check(
@@ -671,9 +773,9 @@ impl RustOutput {
         is_start: bool,
         elision: RuleNodeElision,
     ) -> std::io::Result<()> {
-        Self::output_elision_init(output, 2, has_rule_creation, "self", is_start, elision)?;
+        output.write_all(Self::gen_elision_init(has_rule_creation, &self_ident(), is_start, elision).to_string().as_bytes())?;
         if !is_start {
-            Self::output_node_kind_decl(output, has_rule_rename, name, 2, true)?;
+            output.write_all(Self::gen_node_kind_decl(has_rule_rename, name, true).to_string().as_bytes())?;
         }
         Self::output_regex(
             cst,
@@ -688,7 +790,8 @@ impl RustOutput {
             "self",
             has_rule_rename,
         )?;
-        Self::output_elision_check(output, 2, has_rule_rename, name, "self", is_start, elision)
+        output.write_all(Self::gen_elision_check(has_rule_rename, name, &self_ident(), is_start, elision).to_string().as_bytes())?;
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -741,7 +844,7 @@ impl RustOutput {
         };
 
         // right recursive or non-recursive branches
-        Self::output_node_kind_decl(output, has_rule_rename, name, 3, true)?;
+        output.write_all(Self::gen_node_kind_decl(has_rule_rename, name, true).to_string().as_bytes())?;
         output.write_all(b"            match parser.current {\n")?;
         let ops = if let Regex::Alternation(alt) = regex {
             alt.operands(cst)
@@ -768,7 +871,7 @@ impl RustOutput {
             )?;
 
             let elision = *sema.elision.get(&alt_op.syntax()).unwrap();
-            Self::output_elision_init(output, 5, false, "parser", false, elision)?;
+            output.write_all(Self::gen_elision_init(false, &parser_ident(), false, elision).to_string().as_bytes())?;
 
             if let Some(Recursion::Right(_, index)) = branch {
                 let binding_power = recursive.binding_power(alt_op).0;
@@ -817,7 +920,7 @@ impl RustOutput {
                 )?;
             }
 
-            Self::output_elision_check(output, 5, has_rule_rename, name, "parser", false, elision)?;
+            output.write_all(Self::gen_elision_check(has_rule_rename, name, &parser_ident(), false, elision).to_string().as_bytes())?;
             output.write_all("}\n".indent(4).as_bytes())?;
         }
         if !advance_error_set.is_empty() {
@@ -847,7 +950,7 @@ impl RustOutput {
 
         // left recursive branches
         output.write_all(b"            loop {\n")?;
-        Self::output_node_kind_decl(output, has_rule_rename, name, 4, false)?;
+        output.write_all(Self::gen_node_kind_decl(has_rule_rename, name, false).to_string().as_bytes())?;
         output.write_all(b"                match parser.current {\n")?;
         for branch in recursive.branches() {
             let (concat, left_index, right_index) = match branch {
@@ -921,7 +1024,7 @@ impl RustOutput {
                     )?;
                 }
             }
-            Self::output_cst_close(output, has_rule_rename, name, 6, true, "parser", false)?;
+            output.write_all(Self::gen_cst_close(has_rule_rename, name, true, &parser_ident(), false).to_string().as_bytes())?;
             output.write_all(b"                        continue;\n")?;
             output.write_all(b"                    }\n")?;
         }
@@ -944,6 +1047,21 @@ impl RustOutput {
             .indent(2)
             .as_bytes(),
         )
+    }
+
+    fn gen_parts(cst: &Cst<'_>, rule: RuleDecl) -> TokenStream {
+        let name = rule.name(cst).unwrap().0;
+        let parse_fn = quote::format_ident!("parse_{}", name);
+        let rule_fn = quote::format_ident!("rule_{}", name);
+        let eof_variant = quote::format_ident!("EOF{}", snake_to_pascal_case(name));
+        let doc = format!("Returns the CST for a parse of the {name} rule");
+        quote! {
+            #[doc = #doc]
+            pub fn #parse_fn(mut self, diags: &mut Vec<Diagnostic>) -> Cst<'a> {
+                self.end_of_input = Token::#eof_variant;
+                self.parse_rule(|parser, diags| parser.#rule_fn(diags), diags, Rule::Part)
+            }
+        }
     }
 
     fn output_parts(
@@ -1729,7 +1847,7 @@ impl RustOutput {
             .as_bytes(),
         )?;
         for rule in sema.parts.iter() {
-            Self::output_parts(cst, *rule, output)?;
+            output.write_all(Self::gen_parts(cst, *rule).to_string().as_bytes())?;
         }
         for rule in file.rule_decls(cst) {
             Self::output_rule(cst, sema, rule, output, &token_symbols)?;
