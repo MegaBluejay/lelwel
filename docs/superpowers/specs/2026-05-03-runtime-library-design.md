@@ -24,13 +24,16 @@ Grammar-agnostic interface for token enumeration. Replaces the current pattern m
 
 ```rust
 pub trait TokenType: Copy + Clone + PartialEq + Eq + Debug + 'static {
+    #[inline]
     fn is_skip(&self) -> bool;
+    #[inline]
     fn is_eof(&self) -> bool;
+    #[inline]
     fn eof() -> Self;
 }
 ```
 
-The generated `impl TokenType for Token` matches declared skip tokens and `Error` in `is_skip()`, all EOF variants in `is_eof()`, and returns `Token::EOF` from `eof()`.
+The generated `impl TokenType for Token` matches declared skip tokens and `Error` in `is_skip()`, all EOF variants in `is_eof()`, and returns `Token::EOF` from `eof()`. All methods are annotated `#[inline]` to ensure the trait dispatch is monomorphized and inlined, making this migration zero-cost — the emitted code should be essentially identical to the current hardcoded pattern matches.
 
 ### `RuleType` (runtime crate)
 
@@ -38,11 +41,12 @@ Grammar-agnostic interface for rule enumeration.
 
 ```rust
 pub trait RuleType: Copy + Clone + PartialEq + Eq + Debug + 'static {
+    #[inline]
     fn error() -> Self;
 }
 ```
 
-The generated `impl RuleType for Rule` returns `Rule::Error` from `error()`.
+The generated `impl RuleType for Rule` returns `Rule::Error` from `error()`. Marked `#[inline]` for the same zero-cost reasoning.
 
 ### `ParserHooks` (runtime crate, internal)
 
@@ -53,14 +57,22 @@ pub trait ParserHooks<'a, T: TokenType, R: RuleType> {
     type Diagnostic;
     type Context;
 
+    #[inline]
     fn create_tokens(ctx: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<T>, Vec<Span>);
+    #[inline]
     fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;
+    #[inline]
     fn predicate_skip(&self, token: T) -> bool;
+    #[inline]
     fn create_node(&mut self, rule: R, node_ref: NodeRef, diags: &mut Vec<Self::Diagnostic>);
+    #[inline]
     fn create_node_error(&mut self, node_ref: NodeRef, diags: &mut Vec<Self::Diagnostic>);
+    #[inline]
     fn delete_node(&mut self, rule: R, node_ref: NodeRef);
 }
 ```
+
+All methods are annotated `#[inline]` to ensure monomorphization eliminates the trait dispatch overhead. Combined with `#[inline]` on `TokenType` and `RuleType` methods, the generated code should be equivalent to the current hand-monomorphized approach.
 
 ### `ParserCallbacks` (generated code)
 
@@ -442,4 +454,5 @@ Decision: generate `impl TokenType for Token` in `generated.rs`. It's derived fr
 5. Update root `Cargo.toml` to workspace-only
 6. Update all example `Cargo.toml` and `build.rs` files
 7. Update example `parser.rs` and `lexer.rs` files for new imports and types
-8. Ensure all tests pass
+8. Update documentation (`README.md`, any other docs) to reflect the new crate structure and API
+9. Ensure all tests pass
