@@ -10,4 +10,4 @@ logos = "0.16"
 codespan-reporting = "0.13"
 
 [build-dependencies]
-lelwel = { path = "../.." }
+lelwel-codegen = { path = "../../lelwel-codegen" }

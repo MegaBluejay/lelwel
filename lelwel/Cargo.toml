@@ -1,0 +1,14 @@
+[package]
+name = "lelwel"
+version = "0.10.4"
+description = "Resilient LL(1) parser runtime library"
+repository = "https://github.com/0x2a-42/lelwel"
+license = "MIT OR Apache-2.0"
+edition = "2024"
+keywords = ["parser", "LL", "grammar"]
+categories = ["parsing"]
+
+[lints.rust]
+rust-2018-idioms = { level = "deny" }
+
+[dependencies]

@@ -14,7 +14,7 @@ arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 logos = "0.14.0"
 
-[dependencies.lelwel]
+[dependencies.lelwel-codegen]
 path = ".."
 
 # Prevent this from interfering with workspaces

@@ -394,6 +394,40 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "lelwel"
 version = "0.10.4"
+
+[[package]]
+name = "lelwel-brainfuck"
+version = "0.0.0"
+dependencies = [
+ "codespan-reporting",
+ "lelwel-codegen",
+ "logos",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "lelwel-c"
+version = "0.0.0"
+dependencies = [
+ "codespan-reporting",
+ "lelwel-codegen",
+ "logos",
+ "rustc-hash",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "lelwel-calc"
+version = "0.0.0"
+dependencies = [
+ "codespan-reporting",
+ "lelwel-codegen",
+ "logos",
+]
+
+[[package]]
+name = "lelwel-codegen"
+version = "0.10.4"
 dependencies = [
  "clap",
  "codespan-lsp",
@@ -414,41 +448,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "lelwel-brainfuck"
-version = "0.0.0"
-dependencies = [
- "codespan-reporting",
- "lelwel",
- "logos",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "lelwel-c"
-version = "0.0.0"
-dependencies = [
- "codespan-reporting",
- "lelwel",
- "logos",
- "rustc-hash",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "lelwel-calc"
-version = "0.0.0"
-dependencies = [
- "codespan-reporting",
- "lelwel",
- "logos",
-]
-
-[[package]]
 name = "lelwel-json"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
- "lelwel",
+ "lelwel-codegen",
  "logos",
  "wasm-bindgen",
 ]
@@ -458,7 +462,7 @@ name = "lelwel-l"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
- "lelwel",
+ "lelwel-codegen",
  "logos",
  "wasm-bindgen",
 ]
@@ -468,7 +472,7 @@ name = "lelwel-lua"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
- "lelwel",
+ "lelwel-codegen",
  "logos",
  "wasm-bindgen",
 ]
@@ -478,7 +482,7 @@ name = "lelwel-oberon0"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
- "lelwel",
+ "lelwel-codegen",
  "logos",
  "wasm-bindgen",
 ]
@@ -489,7 +493,7 @@ version = "0.0.0"
 dependencies = [
  "codespan-reporting",
  "herring",
- "lelwel",
+ "lelwel-codegen",
  "wasm-bindgen",
 ]
 
@@ -499,7 +503,7 @@ version = "0.0.0"
 dependencies = [
  "codespan-reporting",
  "herring",
- "lelwel",
+ "lelwel-codegen",
  "wasm-bindgen",
 ]
 
@@ -508,7 +512,7 @@ name = "lelwel-wgsl"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
- "lelwel",
+ "lelwel-codegen",
  "logos",
  "rustc-hash",
  "wasm-bindgen",
