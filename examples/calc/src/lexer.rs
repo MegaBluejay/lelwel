@@ -1,4 +1,5 @@
-use crate::parser::{Diagnostic, Span};
+use lelwel::Span;
+use crate::parser::Diagnostic;
 use codespan_reporting::diagnostic::Label;
 use logos::Logos;
 
@@ -19,7 +20,7 @@ impl LexerError {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Logos, Debug, PartialEq, Copy, Clone)]
+#[derive(Logos, Debug, PartialEq, Eq, Copy, Clone)]
 #[logos(error = LexerError)]
 pub enum Token {
     EOF,
@@ -45,7 +46,10 @@ pub enum Token {
     Error,
 }
 
-pub fn tokenize(source: &str, diags: &mut Vec<Diagnostic>) -> (Vec<Token>, Vec<Span>) {
+pub fn tokenize(
+    source: &str,
+    diags: &mut Vec<Diagnostic>,
+) -> (Vec<Token>, Vec<Span>) {
     let lexer = Token::lexer(source);
     let mut tokens = vec![];
     let mut spans = vec![];

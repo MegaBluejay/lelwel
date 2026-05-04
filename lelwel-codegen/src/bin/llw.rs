@@ -24,7 +24,7 @@ fn main() {
 
     let input = matches.get_one::<String>("INPUT").unwrap();
     let output = matches.get_one::<String>("output").unwrap();
-    match lelwel::compile(
+    match lelwel_codegen::compile(
         input,
         output,
         matches.get_flag("check"),

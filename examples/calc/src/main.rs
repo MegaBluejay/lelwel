@@ -1,4 +1,5 @@
-use self::parser::Parser;
+use lelwel::Parser;
+use self::parser::Rules;
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::{
     self, Config,
@@ -16,7 +17,8 @@ fn main() {
 
     let source = &args[1];
     let mut diags = vec![];
-    let cst = Parser::new(source, &mut diags).parse(&mut diags);
+    let p = Parser::new(source, &mut diags);
+    let cst = p.parse(&mut diags);
     println!("{cst}");
 
     let writer = StandardStream::stderr(ColorChoice::Auto);

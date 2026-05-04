@@ -53,12 +53,12 @@ impl From<usize> for CstIndex {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct MarkOpened(pub(crate) usize);
+pub struct MarkOpened(pub(crate) usize);
 #[derive(Clone, Copy)]
-pub(crate) struct MarkClosed(pub(crate) usize);
+pub struct MarkClosed(pub usize);
 #[derive(Clone)]
-pub(crate) struct MarkTruncation {
-    pub node_count: usize,
-    pub token_count: usize,
-    pub non_skip_len: usize,
+pub struct MarkTruncation {
+    pub(crate) node_count: usize,
+    pub(crate) token_count: usize,
+    pub(crate) non_skip_len: usize,
 }

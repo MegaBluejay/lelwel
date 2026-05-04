@@ -1,6 +1,6 @@
 #![no_main]
-use lelwel::frontend::parser::Parser;
-use lelwel::frontend::sema::SemanticPass;
+use lelwel_codegen::frontend::parser::Parser;
+use lelwel_codegen::frontend::sema::SemanticPass;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

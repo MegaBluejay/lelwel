@@ -12,8 +12,8 @@ cat << EOF > $output
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::NoColor;
 use codespan_reporting::term::{self, DisplayStyle};
-use lelwel::frontend::parser::Parser;
-use lelwel::frontend::sema::SemanticPass;
+use lelwel_codegen::frontend::parser::Parser;
+use lelwel_codegen::frontend::sema::SemanticPass;
 use std::io::BufWriter;
 
 fn gen_diags(input: &str) -> String {

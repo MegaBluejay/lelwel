@@ -6,6 +6,7 @@ license = "MIT OR Apache-2.0"
 edition = "2024"
 
 [dependencies]
+lelwel = { path = "../../lelwel" }
 logos = "0.16"
 codespan-reporting = "0.13"
 

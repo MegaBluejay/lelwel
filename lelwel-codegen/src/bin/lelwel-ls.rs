@@ -2,7 +2,7 @@
 
 use std::error::Error;
 
-use lelwel::ide::Cache;
+use lelwel_codegen::ide::Cache;
 use lsp_server::{Connection, ExtractError, Message, Notification, RequestId, Response};
 use lsp_types::{
     CompletionOptions, GotoDefinitionResponse, Hover, HoverContents, HoverProviderCapability,
@@ -96,7 +96,7 @@ fn main_loop(
     connection: Connection,
     params: serde_json::Value,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let mut cache = lelwel::ide::Cache::default();
+    let mut cache = lelwel_codegen::ide::Cache::default();
     let _params: InitializeParams = serde_json::from_value(params).unwrap();
     for msg in &connection.receiver {
         match msg {

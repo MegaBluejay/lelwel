@@ -61,13 +61,20 @@ where
     T: TokenType,
     R: RuleType,
     Self: ParserHooks<'a, T, R>,
-    Ctx: From<<Self as ParserHooks<'a, T, R>>::Context>,
-    <Self as ParserHooks<'a, T, R>>::Context: From<Ctx>,
 {
-    fn active_error(&self) -> bool {
+    pub fn active_error(&self) -> bool {
         self.error_node.is_some() || self.error_since_advance
     }
-    fn error(
+    pub fn create_diagnostic(&self, span: Span, message: String) -> <Self as ParserHooks<'a, T, R>>::Diagnostic {
+        <Self as ParserHooks<'a, T, R>>::create_diagnostic(self, span, message)
+    }
+    pub fn predicate_skip(&self, token: T) -> bool {
+        <Self as ParserHooks<'a, T, R>>::predicate_skip(self, token)
+    }
+    pub fn create_node_error(&mut self, node_ref: NodeRef, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) {
+        <Self as ParserHooks<'a, T, R>>::create_node_error(self, node_ref, diags)
+    }
+    pub fn error(
         &mut self,
         diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>,
         diag: <Self as ParserHooks<'a, T, R>>::Diagnostic,
@@ -78,7 +85,7 @@ where
         self.error_since_advance = true;
         diags.push(diag);
     }
-    fn advance(&mut self, error: bool, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) {
+    pub fn advance(&mut self, error: bool, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) {
         if !error {
             self.close_error_node(diags);
             self.error_since_advance = false;
@@ -121,7 +128,7 @@ where
             }
         }
     }
-    fn advance_with_error(
+    pub fn advance_with_error(
         &mut self,
         diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>,
         diag: <Self as ParserHooks<'a, T, R>>::Diagnostic,
@@ -132,7 +139,7 @@ where
         }
         self.advance(true, diags);
     }
-    fn peek(&self, lookahead: usize) -> T {
+    pub fn peek(&self, lookahead: usize) -> T {
         self.tokens
             .iter()
             .skip(self.pos)
@@ -140,7 +147,7 @@ where
             .nth(lookahead)
             .map_or(self.end_of_input, |it| *it)
     }
-    fn peek_left(&self, lookbehind: usize) -> T {
+    pub fn peek_left(&self, lookbehind: usize) -> T {
         self.tokens
             .iter()
             .take(self.pos + 1)
@@ -149,39 +156,39 @@ where
             .nth(lookbehind)
             .map_or(self.end_of_input, |it| *it)
     }
-    fn close_error_node(&mut self, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) {
+    pub fn close_error_node(&mut self, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) {
         if let Some(error_node) = self.error_node {
             self.cst.data.close(error_node, R::error());
             <Self as ParserHooks<'a, T, R>>::create_node_error(self, NodeRef(error_node.0), diags);
             self.error_node = None;
         }
     }
-    fn open(&mut self, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkOpened {
+    pub fn open(&mut self, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkOpened {
         self.close_error_node(diags);
         self.cst.data.open()
     }
-    fn open_before(&mut self, mark: MarkClosed, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkOpened {
+    pub fn open_before(&mut self, mark: MarkClosed, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkOpened {
         self.close_error_node(diags);
         self.cst.data.open_before(mark)
     }
-    fn close(&mut self, mark: MarkOpened, rule: R, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkClosed {
+    pub fn close(&mut self, mark: MarkOpened, rule: R, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkClosed {
         self.close_error_node(diags);
         self.cst.data.close(mark, rule)
     }
-    fn close_root(&mut self, mark: MarkOpened, rule: R, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkClosed {
+    pub fn close_root(&mut self, mark: MarkOpened, rule: R, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkClosed {
         self.close_error_node(diags);
         self.cst.data.close_root(mark, rule)
     }
-    fn mark(&mut self, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkClosed {
+    pub fn mark(&mut self, diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>) -> MarkClosed {
         self.close_error_node(diags);
         self.cst.data.mark()
     }
-    fn span(&self) -> Span {
+    pub fn span(&self) -> Span {
         self.cst.data.spans
             .get(self.pos)
             .map_or(self.max_offset..self.max_offset, |span| span.clone())
     }
-    fn get_state(&self, diags: &[<Self as ParserHooks<'a, T, R>>::Diagnostic]) -> ParserState<T> {
+    pub fn get_state(&self, diags: &[<Self as ParserHooks<'a, T, R>>::Diagnostic]) -> ParserState<T> {
         ParserState {
             pos: self.pos,
             current: self.current,
@@ -189,7 +196,7 @@ where
             diag_count: diags.len(),
         }
     }
-    fn set_state(
+    pub fn set_state(
         &mut self,
         state: &ParserState<T>,
         diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>,
@@ -204,6 +211,45 @@ where
         }
         self.cst.data.truncate(state.truncation_mark.clone());
     }
+    pub fn parse_with(
+        mut self,
+        start_rule: impl FnOnce(&mut Self, &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>),
+        diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>,
+        root: R,
+    ) -> Cst<'a, T, R> {
+        let token_count = self.tokens.len();
+        let m = self.open(diags);
+        self.init_skip();
+
+        start_rule(&mut self, diags);
+
+        self.close_error_node(diags);
+        if self.pos != token_count {
+            self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
+            let error_tree = self.open(diags);
+            while self.pos < token_count {
+                let token = self.tokens[self.pos];
+                self.cst.data.advance(token, token.is_skip());
+                self.pos += 1;
+            }
+            self.cst.data.close(error_tree, R::error());
+            <Self as ParserHooks<'a, T, R>>::create_node_error(&mut self, NodeRef(error_tree.0), diags);
+        }
+
+        let closed = self.cst.data.close_root(m, root);
+        <Self as ParserHooks<'a, T, R>>::create_node(&mut self, root, NodeRef(closed.0), diags);
+        self.cst
+    }
+}
+
+impl<'a, T, R, Ctx> Parser<'a, T, R, Ctx>
+where
+    T: TokenType,
+    R: RuleType,
+    Self: ParserHooks<'a, T, R>,
+    Ctx: From<<Self as ParserHooks<'a, T, R>>::Context>,
+    <Self as ParserHooks<'a, T, R>>::Context: From<Ctx>,
+{
     pub fn new_with_context(
         source: &'a str,
         diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>,
@@ -234,34 +280,5 @@ where
     {
         #[allow(clippy::unit_arg)]
         Self::new_with_context(source, diags, Ctx::default())
-    }
-    pub fn parse_with(
-        mut self,
-        start_rule: impl FnOnce(&mut Self, &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>),
-        diags: &mut Vec<<Self as ParserHooks<'a, T, R>>::Diagnostic>,
-        root: R,
-    ) -> Cst<'a, T, R> {
-        let token_count = self.tokens.len();
-        let m = self.open(diags);
-        self.init_skip();
-
-        start_rule(&mut self, diags);
-
-        self.close_error_node(diags);
-        if self.pos != token_count {
-            self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
-            let error_tree = self.open(diags);
-            while self.pos < token_count {
-                let token = self.tokens[self.pos];
-                self.cst.data.advance(token, token.is_skip());
-                self.pos += 1;
-            }
-            self.cst.data.close(error_tree, R::error());
-            <Self as ParserHooks<'a, T, R>>::create_node_error(&mut self, NodeRef(error_tree.0), diags);
-        }
-
-        let closed = self.cst.data.close_root(m, root);
-        <Self as ParserHooks<'a, T, R>>::create_node(&mut self, root, NodeRef(closed.0), diags);
-        self.cst
     }
 }

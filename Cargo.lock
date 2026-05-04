@@ -421,6 +421,7 @@ name = "lelwel-calc"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
 ]
