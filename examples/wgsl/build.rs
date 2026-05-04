@@ -1,3 +1,3 @@
 fn main() {
-    lelwel::build("src/wgsl.llw");
+    lelwel_codegen::build("src/wgsl.llw");
 }

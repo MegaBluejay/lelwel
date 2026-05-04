@@ -1,3 +1,3 @@
 fn main() {
-    lelwel::build("src/python.llw");
+    lelwel_codegen::build("src/python.llw");
 }

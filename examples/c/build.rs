@@ -1,3 +1,3 @@
 fn main() {
-    lelwel::build("src/c.llw");
+    lelwel_codegen::build("src/c.llw");
 }

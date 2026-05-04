@@ -1,3 +1,3 @@
 fn main() {
-    lelwel::build("src/brainfuck.llw");
+    lelwel_codegen::build("src/brainfuck.llw");
 }
