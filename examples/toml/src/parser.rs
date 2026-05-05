@@ -1,11 +1,12 @@
 use crate::lexer::{Token, tokenize};
+use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 
 pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl Parser<'_> {
+impl<'a> Parser<'a, Token, Rule, ()> {
     fn lookahead(&self) -> impl Iterator<Item = Token> + use<'_> {
         self.tokens[self.pos..]
             .iter()
@@ -14,7 +15,7 @@ impl Parser<'_> {
     }
 }
 
-impl<'a> ParserCallbacks<'a> for Parser<'a> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
     type Diagnostic = Diagnostic;
     type Context = ();
 

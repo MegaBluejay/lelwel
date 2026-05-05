@@ -4,6 +4,7 @@ mod parser;
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::term::{self, Config};
+use lelwel::Parser;
 use parser::*;
 
 fn main() -> std::io::Result<()> {

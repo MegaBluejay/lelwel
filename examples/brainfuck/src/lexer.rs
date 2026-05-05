@@ -1,4 +1,5 @@
-use super::parser::{Diagnostic, Span};
+use lelwel::Span;
+use crate::parser::Diagnostic;
 use codespan_reporting::diagnostic::Label;
 use logos::Logos;
 

@@ -1,4 +1,5 @@
-use crate::{Cst, Node, NodeRef, Rule, Span};
+use crate::parser::{Cst, Node, Rule};
+use lelwel::{NodeRef, Span};
 
 #[allow(dead_code)]
 pub trait AstNode {

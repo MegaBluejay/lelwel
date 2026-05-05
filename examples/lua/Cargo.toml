@@ -9,6 +9,7 @@ edition = "2024"
 crate-type = ["lib", "cdylib"]
 
 [dependencies]
+lelwel = { path = "../../lelwel" }
 logos = "0.16"
 codespan-reporting = "0.13"
 wasm-bindgen = "0.2"

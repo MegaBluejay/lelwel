@@ -1,4 +1,5 @@
-use self::parser::Parser;
+use lelwel::Parser;
+use self::parser::Rules;
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::{
     self, Config,

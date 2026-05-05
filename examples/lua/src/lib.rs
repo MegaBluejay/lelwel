@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::*;
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::NoColor;
 use codespan_reporting::term::{self, Config};
+use lelwel::Parser;
 use parser::*;
 
 #[wasm_bindgen]

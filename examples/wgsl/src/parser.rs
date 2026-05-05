@@ -1,4 +1,5 @@
-use super::lexer::{Token, tokenize};
+use crate::lexer::{Token, tokenize};
+use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 use rustc_hash::FxHashSet;
 
@@ -13,7 +14,7 @@ pub struct Context<'a> {
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl Parser<'_> {
+impl<'a> Parser<'a, Token, Rule, Context<'a>> {
     fn is_swizzle_name(&self) -> bool {
         let name = self.cst.source[self.span()].as_bytes();
         matches!(
@@ -104,7 +105,7 @@ impl Parser<'_> {
     }
 }
 
-impl<'a> ParserCallbacks<'a> for Parser<'a> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
     type Diagnostic = Diagnostic;
     type Context = Context<'a>;
 

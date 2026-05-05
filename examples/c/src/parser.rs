@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::lexer::{Token, tokenize};
+use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 use rustc_hash::FxHashMap;
 
@@ -59,7 +60,7 @@ impl Default for Context<'_> {
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl Parser<'_> {
+impl<'a> Parser<'a, Token, Rule, Context<'a>> {
     fn check_missing_type_specifier(
         &self,
         decl_specs: Option<DeclarationSpecifiers>,
@@ -144,7 +145,7 @@ impl Parser<'_> {
 }
 
 #[allow(clippy::ptr_arg)]
-impl<'a> ParserCallbacks<'a> for Parser<'a> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
     type Diagnostic = Diagnostic;
     type Context = Context<'a>;
 

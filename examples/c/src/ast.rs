@@ -1,5 +1,6 @@
 use crate::lexer::Token;
-use crate::{Cst, CstChildren, Node, NodeRef, Rule, Span};
+use crate::parser::{Cst, CstChildren, Node, Rule};
+use lelwel::{NodeRef, Span};
 
 #[allow(dead_code)]
 pub trait AstNode {

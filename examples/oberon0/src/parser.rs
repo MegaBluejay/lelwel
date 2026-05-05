@@ -1,11 +1,12 @@
 use crate::lexer::{Token, tokenize};
+use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 
 pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl<'a> ParserCallbacks<'a> for Parser<'a> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
     type Diagnostic = Diagnostic;
     type Context = ();
 

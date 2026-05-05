@@ -6,6 +6,7 @@ use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::term::{self, Config};
 use lexer::Token;
+use lelwel::Parser;
 use parser::*;
 use std::collections::HashMap;
 
