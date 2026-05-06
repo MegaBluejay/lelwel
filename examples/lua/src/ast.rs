@@ -1,15 +1,16 @@
-use crate::parser::{Cst, Node, Rule};
-use lelwel::{NodeRef, Span};
+use crate::lexer::Token;
+use crate::parser::Rule;
+use lelwel::{Cst, Node, NodeRef, Span};
 
 #[allow(dead_code)]
 pub trait AstNode {
-    fn cast(cst: &Cst, syntax: NodeRef) -> Option<Self>
+    fn cast(cst: &Cst<'_, Token, Rule>, syntax: NodeRef) -> Option<Self>
     where
         Self: Sized;
 
     fn syntax(&self) -> NodeRef;
 
-    fn span(&self, cst: &Cst) -> Span {
+    fn span(&self, cst: &Cst<'_, Token, Rule>) -> Span {
         cst.span(self.syntax())
     }
 }
@@ -21,7 +22,7 @@ macro_rules! ast_node {
             syntax: NodeRef,
         }
         impl AstNode for $node_name {
-            fn cast(cst: &Cst, syntax: NodeRef) -> Option<Self> {
+            fn cast(cst: &Cst<'_, Token, Rule>, syntax: NodeRef) -> Option<Self> {
                 match cst.get(syntax) {
                     Node::Rule(Rule::$node_name, _) => Some(Self { syntax }),
                     _ => None,
@@ -38,7 +39,7 @@ macro_rules! ast_node {
             $($node_names($node_names),)*
         }
         impl AstNode for $node_name {
-            fn cast(cst: &Cst, syntax: NodeRef) -> Option<Self> {
+            fn cast(cst: &Cst<'_, Token, Rule>, syntax: NodeRef) -> Option<Self> {
                 $(
                 if let Some(node) = $node_names::cast(cst, syntax) {
                     return Some(Self::$node_names(node));

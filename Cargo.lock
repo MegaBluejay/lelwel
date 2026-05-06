@@ -400,6 +400,7 @@ name = "lelwel-brainfuck"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
  "wasm-bindgen",
@@ -410,6 +411,7 @@ name = "lelwel-c"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
  "rustc-hash",
@@ -453,6 +455,7 @@ name = "lelwel-json"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
  "wasm-bindgen",
@@ -463,6 +466,7 @@ name = "lelwel-l"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
  "wasm-bindgen",
@@ -473,6 +477,7 @@ name = "lelwel-lua"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
  "wasm-bindgen",
@@ -483,6 +488,7 @@ name = "lelwel-oberon0"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
  "wasm-bindgen",
@@ -494,6 +500,7 @@ version = "0.0.0"
 dependencies = [
  "codespan-reporting",
  "herring",
+ "lelwel",
  "lelwel-codegen",
  "wasm-bindgen",
 ]
@@ -504,6 +511,7 @@ version = "0.0.0"
 dependencies = [
  "codespan-reporting",
  "herring",
+ "lelwel",
  "lelwel-codegen",
  "wasm-bindgen",
 ]
@@ -513,6 +521,7 @@ name = "lelwel-wgsl"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "lelwel",
  "lelwel-codegen",
  "logos",
  "rustc-hash",

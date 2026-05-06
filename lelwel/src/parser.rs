@@ -256,7 +256,7 @@ where
         context: Ctx,
     ) -> Self {
         let mut ctx = <Self as ParserHooks<'a, T, R>>::Context::from(context);
-        let (tokens, spans) = <Self as ParserHooks<'a, T, R>>::create_tokens(&mut ctx, source, diags);
+        let (tokens, spans) = Self::create_tokens(&mut ctx, source, diags);
         let max_offset = source.len();
         Self {
             current: T::eof(),

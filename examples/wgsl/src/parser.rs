@@ -1,5 +1,4 @@
 use crate::lexer::{Token, tokenize};
-use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 use rustc_hash::FxHashSet;
 
@@ -14,9 +13,15 @@ pub struct Context<'a> {
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl<'a> Parser<'a, Token, Rule, Context<'a>> {
+trait ParserExt<'a>: Sized {
+    fn is_swizzle_name(&self) -> bool;
+    fn find_template_list(&mut self);
+    fn is_func_call(&self) -> bool;
+}
+
+impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
     fn is_swizzle_name(&self) -> bool {
-        let name = self.cst.source[self.span()].as_bytes();
+        let name = self.cst.source()[self.span()].as_bytes();
         matches!(
             name,
             [b'r' | b'g' | b'b' | b'a']
@@ -110,7 +115,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
     type Context = Context<'a>;
 
     fn create_tokens(
-        _context: &mut Self::Context,
+        _context: &mut <Self as ParserCallbacks<'a>>::Context,
         source: &str,
         diags: &mut Vec<Diagnostic>,
     ) -> (Vec<Token>, Vec<Span>) {
@@ -193,7 +198,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
         self.is_swizzle_name()
     }
 
-    fn action_let_decl_1(&mut self, diags: &mut Vec<Self::Diagnostic>) {
+    fn action_let_decl_1(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         if self.active_error() && self.current == Token::Semi {
             diags
                 .last_mut()
@@ -202,7 +207,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
                 .push("note: let declaration requires initializer".to_string());
         }
     }
-    fn action_const_decl_1(&mut self, diags: &mut Vec<Self::Diagnostic>) {
+    fn action_const_decl_1(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         if self.active_error() && self.current == Token::Semi {
             diags
                 .last_mut()
@@ -215,7 +220,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
     fn create_node_global_let_decl(
         &mut self,
         node_ref: NodeRef,
-        diags: &mut Vec<Self::Diagnostic>,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
     ) {
         diags.push(
             Diagnostic::error()

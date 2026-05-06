@@ -1,17 +1,21 @@
 use crate::lexer::{Token, tokenize};
-use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 
 pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl<'a> Parser<'a, Token, Rule, ()> {
-    fn lookahead(&self) -> impl Iterator<Item = Token> + use<'_> {
+trait ParserExt<'a>: Sized {
+    fn lookahead(&self) -> Vec<Token>;
+}
+
+impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, ()> {
+    fn lookahead(&self) -> Vec<Token> {
         self.tokens[self.pos..]
             .iter()
-            .filter(|tok| !Self::is_skipped(**tok) && **tok != Token::Newline)
+            .filter(|tok| !tok.is_skip() && **tok != Token::Newline)
             .copied()
+            .collect()
     }
 }
 
@@ -20,7 +24,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
     type Context = ();
 
     fn create_tokens(
-        _context: &mut Self::Context,
+        _context: &mut <Self as ParserCallbacks<'a>>::Context,
         source: &str,
         diags: &mut Vec<Diagnostic>,
     ) -> (Vec<Token>, Vec<Span>) {
@@ -36,14 +40,16 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
         self.tokens.get(self.pos + 1).copied() != Some(Token::LBrak)
     }
     fn predicate_array_1(&self) -> bool {
-        self.lookahead().next() != Some(Token::RBrak)
+        let la = self.lookahead();
+        la.first() != Some(&Token::RBrak)
     }
     fn predicate_array_2(&self) -> bool {
-        let mut iter = self.lookahead();
-        iter.next() != Some(Token::RBrak) && iter.next() != Some(Token::RBrak)
+        let la = self.lookahead();
+        la.first() != Some(&Token::RBrak) && la.get(1) != Some(&Token::RBrak)
     }
     fn predicate_array_3(&self) -> bool {
-        self.lookahead().next() == Some(Token::Comma)
+        let la = self.lookahead();
+        la.first() == Some(&Token::Comma)
     }
     fn assertion_array_table_1(&self) -> Option<Diagnostic> {
         // don't skip whitespaces

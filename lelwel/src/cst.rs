@@ -153,12 +153,12 @@ where
             }
         }
     }
-    pub fn match_token<T2>(&self, node_ref: NodeRef, matched_token: &T2) -> Option<Span>
+    pub fn match_token(&self, node_ref: NodeRef, matched_token: T) -> Option<Span>
     where
-        T: PartialEq<T2>,
+        T: PartialEq,
     {
         match &self.nodes[node_ref.0] {
-            Node::Token(token, idx) if token == matched_token => {
+            Node::Token(token, idx) if *token == matched_token => {
                 Some(self.spans[usize::from(*idx)].clone())
             }
             _ => None,
@@ -202,9 +202,9 @@ where
     pub fn span(&self, node_ref: NodeRef) -> Span {
         self.data.span(node_ref)
     }
-    pub fn match_token<T2>(&self, node_ref: NodeRef, matched_token: &T2) -> Option<(&'a str, Span)>
+    pub fn match_token(&self, node_ref: NodeRef, matched_token: T) -> Option<(&'a str, Span)>
     where
-        T: PartialEq<T2>,
+        T: PartialEq,
     {
         self.data.match_token(node_ref, matched_token).map(|span| (&self.source[span.clone()], span))
     }

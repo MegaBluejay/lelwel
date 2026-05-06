@@ -1,16 +1,16 @@
 use crate::lexer::Token;
-use crate::parser::{Cst, CstChildren, Node, Rule};
-use lelwel::{NodeRef, Span};
+use crate::parser::Rule;
+use lelwel::{Cst, CstChildren, Node, NodeRef, Span};
 
 #[allow(dead_code)]
 pub trait AstNode {
-    fn cast(cst: &Cst, syntax: NodeRef) -> Option<Self>
+    fn cast(cst: &Cst<'_, Token, Rule>, syntax: NodeRef) -> Option<Self>
     where
         Self: Sized;
 
     fn syntax(&self) -> NodeRef;
 
-    fn span(&self, cst: &Cst) -> Span {
+    fn span(&self, cst: &Cst<'_, Token, Rule>) -> Span {
         cst.span(self.syntax())
     }
 }
@@ -22,7 +22,7 @@ macro_rules! ast_node {
             syntax: NodeRef,
         }
         impl AstNode for $node_name {
-            fn cast(cst: &Cst, syntax: NodeRef) -> Option<Self> {
+            fn cast(cst: &Cst<'_, Token, Rule>, syntax: NodeRef) -> Option<Self> {
                 match cst.get(syntax) {
                     Node::Rule(Rule::$node_name, _) => Some(Self { syntax }),
                     _ => None,
@@ -40,7 +40,7 @@ macro_rules! ast_node {
             $($node_names($node_names),)*
         }
         impl AstNode for $node_name {
-            fn cast(cst: &Cst, syntax: NodeRef) -> Option<Self> {
+            fn cast(cst: &Cst<'_, Token, Rule>, syntax: NodeRef) -> Option<Self> {
                 $(
                 if let Some(node) = $node_names::cast(cst, syntax) {
                     return Some(Self::$node_names(node));
@@ -80,17 +80,17 @@ ast_node!(
 );
 
 impl DeclarationSpecifiers {
-    pub fn has_type_specifier(&self, cst: &Cst) -> bool {
+    pub fn has_type_specifier(&self, cst: &Cst<'_, Token, Rule>) -> bool {
         cst.children(self.syntax)
             .any(|node| TypeSpecifier::cast(cst, node).is_some())
     }
 }
 impl Declaration {
-    pub fn declaration_specifiers(&self, cst: &Cst) -> Option<DeclarationSpecifiers> {
+    pub fn declaration_specifiers(&self, cst: &Cst<'_, Token, Rule>) -> Option<DeclarationSpecifiers> {
         cst.children(self.syntax)
             .find_map(|node| DeclarationSpecifiers::cast(cst, node))
     }
-    pub fn init_declarator_list(&self, cst: &Cst) -> Option<InitDeclaratorList> {
+    pub fn init_declarator_list(&self, cst: &Cst<'_, Token, Rule>) -> Option<InitDeclaratorList> {
         cst.children(self.syntax)
             .find_map(|node| InitDeclaratorList::cast(cst, node))
     }
@@ -98,9 +98,9 @@ impl Declaration {
 impl InitDeclaratorList {
     pub fn init_declarators<'a>(
         &self,
-        cst: &'a Cst,
+        cst: &'a Cst<'a, Token, Rule>,
     ) -> std::iter::FilterMap<
-        CstChildren<'a>,
+        CstChildren<'a, Token, Rule>,
         impl FnMut(NodeRef) -> Option<InitDeclarator> + 'a + use<'a>,
     > {
         cst.children(self.syntax)
@@ -108,32 +108,32 @@ impl InitDeclaratorList {
     }
 }
 impl InitDeclarator {
-    pub fn declarator(&self, cst: &Cst) -> Option<Declarator> {
+    pub fn declarator(&self, cst: &Cst<'_, Token, Rule>) -> Option<Declarator> {
         cst.children(self.syntax)
             .find_map(|node| Declarator::cast(cst, node))
     }
 }
 impl FunctionDefinition {
-    pub fn declaration_specifiers(&self, cst: &Cst) -> Option<DeclarationSpecifiers> {
+    pub fn declaration_specifiers(&self, cst: &Cst<'_, Token, Rule>) -> Option<DeclarationSpecifiers> {
         cst.children(self.syntax)
             .find_map(|node| DeclarationSpecifiers::cast(cst, node))
     }
-    pub fn declarator(&self, cst: &Cst) -> Option<Declarator> {
+    pub fn declarator(&self, cst: &Cst<'_, Token, Rule>) -> Option<Declarator> {
         cst.children(self.syntax)
             .find_map(|node| Declarator::cast(cst, node))
     }
 }
 impl Declarator {
-    pub fn name<'a>(&self, cst: &Cst<'a>) -> Option<(&'a str, Span)> {
+    pub fn name<'a>(&self, cst: &Cst<'a, Token, Rule>) -> Option<(&'a str, Span)> {
         self.direct_declarator(cst).and_then(|decl| decl.name(cst))
     }
-    pub fn direct_declarator(&self, cst: &Cst) -> Option<DirectDeclarator> {
+    pub fn direct_declarator(&self, cst: &Cst<'_, Token, Rule>) -> Option<DirectDeclarator> {
         cst.children(self.syntax)
             .find_map(|node| DirectDeclarator::cast(cst, node))
     }
 }
 impl DirectDeclarator {
-    pub fn name<'a>(&self, cst: &Cst<'a>) -> Option<(&'a str, Span)> {
+    pub fn name<'a>(&self, cst: &Cst<'a, Token, Rule>) -> Option<(&'a str, Span)> {
         match self {
             DirectDeclarator::FunctionDeclarator(decl) => {
                 decl.base(cst).and_then(|decl| decl.name(cst))
@@ -149,36 +149,36 @@ impl DirectDeclarator {
     }
 }
 impl FunctionDeclarator {
-    pub fn base(&self, cst: &Cst) -> Option<DirectDeclarator> {
+    pub fn base(&self, cst: &Cst<'_, Token, Rule>) -> Option<DirectDeclarator> {
         cst.children(self.syntax)
             .find_map(|node| DirectDeclarator::cast(cst, node))
     }
-    pub fn is_complete(&self, cst: &Cst) -> bool {
+    pub fn is_complete(&self, cst: &Cst<'_, Token, Rule>) -> bool {
         cst.children(self.syntax)
             .find_map(|node| cst.match_token(node, Token::RPar))
             .is_some()
     }
 }
 impl ArrayDeclarator {
-    pub fn base(&self, cst: &Cst) -> Option<DirectDeclarator> {
+    pub fn base(&self, cst: &Cst<'_, Token, Rule>) -> Option<DirectDeclarator> {
         cst.children(self.syntax)
             .find_map(|node| DirectDeclarator::cast(cst, node))
     }
 }
 impl ParenDeclarator {
-    pub fn base(&self, cst: &Cst) -> Option<Declarator> {
+    pub fn base(&self, cst: &Cst<'_, Token, Rule>) -> Option<Declarator> {
         cst.children(self.syntax)
             .find_map(|node| Declarator::cast(cst, node))
     }
 }
 impl IdentDeclarator {
-    pub fn name<'a>(&self, cst: &Cst<'a>) -> Option<(&'a str, Span)> {
+    pub fn name<'a>(&self, cst: &Cst<'a, Token, Rule>) -> Option<(&'a str, Span)> {
         cst.children(self.syntax)
             .find_map(|node| cst.match_token(node, Token::Identifier))
     }
 }
 impl Enumerator {
-    pub fn name<'a>(&self, cst: &Cst<'a>) -> Option<(&'a str, Span)> {
+    pub fn name<'a>(&self, cst: &Cst<'a, Token, Rule>) -> Option<(&'a str, Span)> {
         cst.children(self.syntax)
             .find_map(|node| cst.match_token(node, Token::Identifier))
     }

@@ -240,7 +240,7 @@ impl Default for Context {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Herring, Debug, PartialEq, Copy, Clone)]
+#[derive(Herring, Debug, PartialEq, Eq, Copy, Clone)]
 #[herring(initial = emit_indent_dedent)]
 #[herring(extras = Context)]
 #[herring(error = LexerError)]

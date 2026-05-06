@@ -378,7 +378,7 @@ fn check_offset_date_time(value: &str, span: &Span, diags: &mut Vec<Diagnostic>)
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Herring, Debug, PartialEq, Copy, Clone)]
+#[derive(Herring, Debug, PartialEq, Eq, Copy, Clone)]
 #[herring(error = LexerError)]
 #[herring(subpattern full_date = "[0-9]{4}-[0-9]{2}-[0-9]{2}")]
 #[herring(subpattern partial_time = r"[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?")]

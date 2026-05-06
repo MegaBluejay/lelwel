@@ -1,6 +1,5 @@
 use crate::ast::{AstNode, Exp};
 use crate::lexer::{Token, tokenize};
-use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 
 pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
@@ -12,7 +11,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
     type Context = ();
 
     fn create_tokens(
-        _context: &mut Self::Context,
+        _context: &mut <Self as ParserCallbacks<'a>>::Context,
         source: &str,
         diags: &mut Vec<Diagnostic>,
     ) -> (Vec<Token>, Vec<Span>) {

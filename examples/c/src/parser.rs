@@ -1,6 +1,5 @@
 use crate::ast::*;
 use crate::lexer::{Token, tokenize};
-use lelwel::*;
 use codespan_reporting::diagnostic::Label;
 use rustc_hash::FxHashMap;
 
@@ -26,6 +25,7 @@ pub struct Context<'a> {
     in_typedef: Vec<Option<Span>>,
     last_seen_declarator: Option<Declarator>,
     first_declarator_in_list: Option<Declarator>,
+    spans: Vec<Span>,
 }
 
 impl Default for Context<'_> {
@@ -54,13 +54,25 @@ impl Default for Context<'_> {
             in_typedef: vec![],
             last_seen_declarator: None,
             first_declarator_in_list: None,
+            spans: vec![],
         }
     }
 }
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl<'a> Parser<'a, Token, Rule, Context<'a>> {
+trait ParserExt<'a>: Sized {
+    fn check_missing_type_specifier(
+        &self,
+        decl_specs: Option<DeclarationSpecifiers>,
+        decl: Option<Declarator>,
+        diags: &mut Vec<Diagnostic>,
+    );
+    fn is_type_name(&self, pos: usize) -> bool;
+    fn is_followed_by_type(&self) -> bool;
+}
+
+impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
     fn check_missing_type_specifier(
         &self,
         decl_specs: Option<DeclarationSpecifiers>,
@@ -86,7 +98,7 @@ impl<'a> Parser<'a, Token, Rule, Context<'a>> {
     }
 
     fn is_type_name(&self, pos: usize) -> bool {
-        let name = &self.cst.source[self.cst.data.spans[pos].clone()];
+        let name = &self.cst.source()[self.context.spans[pos].clone()];
         for scopes in self.context.scopes.iter().rev() {
             if let Some(is_type) = scopes.declared_names.get(name) {
                 return *is_type;
@@ -130,7 +142,7 @@ impl<'a> Parser<'a, Token, Rule, Context<'a>> {
                 .iter()
                 .enumerate()
                 .filter_map(|(i, tok)| {
-                    if !Self::is_skipped(*tok) {
+                    if !tok.is_skip() {
                         Some(i)
                     } else {
                         None
@@ -150,11 +162,13 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
     type Context = Context<'a>;
 
     fn create_tokens(
-        _context: &mut Self::Context,
+        context: &mut <Self as ParserCallbacks<'a>>::Context,
         source: &str,
         diags: &mut Vec<Diagnostic>,
     ) -> (Vec<Token>, Vec<Span>) {
-        tokenize(source, diags)
+        let (tokens, spans) = tokenize(source, diags);
+        context.spans = spans.clone();
+        (tokens, spans)
     }
     fn create_diagnostic(&self, span: Span, message: String) -> Diagnostic {
         Diagnostic::error()
@@ -240,7 +254,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
             // check that this is not a compound literal
             let mut it = self.tokens[self.pos..]
                 .iter()
-                .filter(|tok| !Self::is_skipped(**tok))
+                .filter(|tok| !tok.is_skip())
                 .skip(1);
             let mut paren_depth = 1;
             for tok in it.by_ref() {
@@ -268,7 +282,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
                     Some(Token::LBrace) if paren_depth == 0 => return false,
                     Some(Token::LPar) if paren_depth != 0 => paren_depth += 1,
                     Some(Token::RPar) => paren_depth -= 1,
-                    Some(tok) if paren_depth > 0 || Self::is_skipped(*tok) => {}
+                    Some(tok) if paren_depth > 0 || tok.is_skip() => {}
                     _ => return true,
                 }
             }
@@ -327,7 +341,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
         }
         let mut it = self.tokens[self.pos..]
             .iter()
-            .filter(|tok| !Self::is_skipped(**tok));
+            .filter(|tok| !tok.is_skip());
         while let Some(tok) = it.next() {
             match tok {
                 Token::Attribute => {
