@@ -445,6 +445,78 @@ Wait — but `lexer.rs` is hand-written (or scaffolded once). The user may modif
 
 Decision: generate `impl TokenType for Token` in `generated.rs`. It's derived from grammar declarations and matches what the parser expects. Users who modify `Token` also need to update the `impl TokenType` — this is analogous to the current situation where modifying `Token` requires the grammar to match.
 
+## Deviations from Spec
+
+The following decisions were made during implementation that differ from the original design above.
+
+### `Parser` type parameter: `Parser<'a, T, R, Ctx>`
+
+The spec defined `Parser<'a, T, R>` with context accessed via `<Self as ParserHooks>::Context`. This doesn't work in struct definitions — you can't use `<Self as Trait>::Assoc` in a struct field type because `Self` isn't bound until an `impl` block. A fourth type parameter `Ctx` was added:
+
+```rust
+pub struct Parser<'a, T: TokenType, R: RuleType, Ctx> {
+    pub context: Ctx,
+    // ...
+}
+```
+
+`new`/`new_with_context` use `From`/`Into` bounds between `Ctx` and `<Self as ParserHooks<'a, T, R>>::Ctx` to convert at the boundary.
+
+### `ParserCallbacks` extends `ParserHooks` with equality bounds
+
+The spec showed a blanket `impl<P> ParserHooks for P where P: ParserCallbacks` — but this makes `Self::Diag` ambiguous in `Parser`'s impl blocks (could resolve through either trait). The actual design makes `ParserCallbacks` a supertrait of `ParserHooks`:
+
+```rust
+pub trait ParserCallbacks<'a>:
+    ParserHooks<'a, Token, Rule, Diag = Self::Diagnostic, Ctx = Self::Context>
+{ ... }
+```
+
+The equality bounds (`Diag = Self::Diagnostic`, `Ctx = Self::Context`) make the associated types provably equal between the two traits, eliminating ambiguity. The blanket impl is no longer generic over `P` — it's `impl ParserHooks for Parser<'a, Token, Rule, Ctx> where Self: ParserCallbacks<'a>`.
+
+### `ParserHooks` method names use `_hook` suffix
+
+Because `ParserCallbacks` and `ParserHooks` share method names (`create_tokens`, `create_diagnostic`, `predicate_skip`, `create_node_error`), method calls on `self` inside `Parser`'s impl blocks would be ambiguous. `ParserHooks` methods were renamed with a `_hook` suffix:
+
+- `create_tokens` → `create_tokens_hook`
+- `create_diagnostic` → `create_diagnostic_hook`
+- `predicate_skip` → `predicate_skip_hook`
+- `create_node_error` → `create_node_error_hook`
+
+`ParserCallbacks` keeps the user-facing names without suffix.
+
+### No inherent wrapper methods on `Parser`
+
+The spec suggested `Parser` would call `self.create_diagnostic(...)`, `self.predicate_skip(...)`, `self.create_node_error(...)` as inherent methods that forward to the `ParserHooks` trait methods. This caused infinite recursion: the inherent methods and the blanket `ParserHooks` impl (which dispatches to `ParserCallbacks`) formed a call cycle.
+
+The fix was to remove the inherent methods entirely. Instead, `Parser`'s impl blocks call `self.create_diagnostic_hook(...)`, `self.predicate_skip_hook(...)`, `self.create_node_error_hook(...)` directly. The `err!` macro was also updated to call `create_diagnostic_hook`. This avoids the ambiguity without requiring UFCS verbosity.
+
+### `ParserArgs` trait and `Diag<P>` type alias
+
+Because `ParserCallbacks: ParserHooks` with equality bounds makes `Self::Diag` ambiguous in `Parser`'s impl blocks (resolvable through either trait), a private `ParserArgs` trait disambiguates:
+
+```rust
+pub trait ParserArgs { type Diag; }
+impl<...> ParserArgs for Parser<'a, T, R, Ctx> where Self: ParserHooks<'a, T, R> {
+    type Diag = <Self as ParserHooks<'a, T, R>>::Diag;
+}
+type Diag<P> = <P as ParserArgs>::Diag;
+```
+
+`Parser`'s impl blocks use `Diag<Self>` instead of `Self::Diag`.
+
+### `Rules` trait split: signatures in trait, bodies in impl
+
+The spec showed `Rules` as a trait with default method bodies. But `parse_*` methods reference `Parser` inherent methods (`end_of_input`, `parse_with`) which can't be called from trait default bodies without `Self: ParserHooks` bounds that complicate things. Instead, `Rules` has only method signatures (no defaults), and all bodies live in the `impl Rules for Parser` block.
+
+### Extension traits instead of inherent `impl Parser` blocks
+
+Since `Parser` is now a foreign type (defined in the runtime crate), examples can't add `impl Parser` blocks. Examples that previously had `impl Parser` (e.g. toml, wgsl, c) now define extension traits (`ParserExt`) with the same methods, and `impl ParserExt for Parser`.
+
+### `Self::is_skipped()` replaced by `token.is_skip()`
+
+The `Parser::is_skipped()` static method was replaced by calling `TokenType::is_skip()` on the token value directly: `token.is_skip()`. This is more natural and avoids the method needing to know about the grammar's skip set.
+
 ## Migration Summary
 
 1. Create `lelwel/` directory for the runtime crate
