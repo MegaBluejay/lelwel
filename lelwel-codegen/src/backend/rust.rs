@@ -214,7 +214,7 @@ impl RustOutput {
                 let doc = format!("Called when `{rule_name}` node is created.");
                 create_node_methods.push(quote! {
                     #[doc = #doc]
-                    fn #create_fn(&mut self, _node_ref: NodeRef, _diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {}
+                    fn #create_fn(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
                 });
             }
 
@@ -256,7 +256,7 @@ impl RustOutput {
                 let doc = format!("Called when semantic action `#{num}` in rule `{rule}` is visited.");
                 action_methods.push(quote! {
                     #[doc = #doc]
-                    fn #action_fn(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>);
+                    fn #action_fn(&mut self, diags: &mut Vec<Self::Diagnostic>);
                 });
             }
 
@@ -271,7 +271,7 @@ impl RustOutput {
                 let doc = format!("Called when semantic assertion `!{num}` in rule `{rule}` is visited.");
                 assertion_methods.push(quote! {
                     #[doc = #doc]
-                    fn #assert_fn(&self) -> Option<<Self as ParserCallbacks<'a>>::Diagnostic>;
+                    fn #assert_fn(&self) -> Option<Self::Diagnostic>;
                 });
             }
 
@@ -281,14 +281,14 @@ impl RustOutput {
 
             quote! {
                 #[allow(clippy::ptr_arg)]
-                pub trait ParserCallbacks<'a>: ParserHooks<'a, Token, Rule, Diag = <Self as ParserCallbacks<'a>>::Diagnostic, Ctx = <Self as ParserCallbacks<'a>>::Context> {
+                pub trait ParserCallbacks<'a>: ParserHooks<'a, Token, Rule, Diag = Self::Diagnostic, Ctx = Self::Context> {
                     type Diagnostic;
                     type Context;
 
                     #[doc = #create_tokens_doc]
-                    fn create_tokens(context: &mut <Self as ParserCallbacks<'a>>::Context, source: &'a str, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> (Vec<Token>, Vec<Span>);
+                    fn create_tokens(context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>);
                     #[doc = #create_diagnostic_doc]
-                    fn create_diagnostic(&self, span: Span, message: String) -> <Self as ParserCallbacks<'a>>::Diagnostic;
+                    fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;
                     #[doc = #predicate_skip_doc]
                     fn predicate_skip(&self, _token: Token) -> bool {
                         false
@@ -330,7 +330,7 @@ impl RustOutput {
                 seen_actions.insert((rule, num));
                 let action_fn = quote::format_ident!("action_{}_{}", rule, num);
                 action_methods.push(quote! {
-                    fn #action_fn(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+                    fn #action_fn(&mut self, diags: &mut Vec<Self::Diagnostic>) {
                         todo!()
                     }
                 });
@@ -345,7 +345,7 @@ impl RustOutput {
                 seen_assertions.insert((rule, num));
                 let assert_fn = quote::format_ident!("assertion_{}_{}", rule, num);
                 assertion_methods.push(quote! {
-                    fn #assert_fn(&self) -> Option<<Self as ParserCallbacks<'a>>::Diagnostic> {
+                    fn #assert_fn(&self) -> Option<Self::Diagnostic> {
                         todo!()
                     }
                 });
@@ -356,11 +356,11 @@ impl RustOutput {
                     type Diagnostic = Diagnostic;
                     type Context = ();
 
-                    fn create_tokens(_context: &mut <Self as ParserCallbacks<'a>>::Context, source: &'a str, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> (Vec<Token>, Vec<Span>) {
+                    fn create_tokens(_context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>) {
                         tokenize(source, diags)
                     }
-                    fn create_diagnostic(&self, span: Span, message: String) -> <Self as ParserCallbacks<'a>>::Diagnostic {
-                        <Self as ParserCallbacks<'a>>::Diagnostic::error()
+                    fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic {
+                        Self::Diagnostic::error()
                             .with_message(message)
                             .with_label(Label::primary((), span))
                     }
@@ -715,7 +715,7 @@ impl RustOutput {
             quote! { rec ( #self_ , diags , #lhs_ident ) ; }
         };
         let parser_ty = quote! { Parser < 'b , Token , Rule , Ctx > };
-        let diags_ty = quote! { Vec < < #parser_ty as ParserHooks < 'b , Token , Rule > > :: Diag > };
+        let diags_ty = quote! { Vec < < #parser_ty as ParserCallbacks < 'b > > :: Diagnostic > };
         quote! {
             fn rec < 'b , Ctx > (
                 parser : & mut #parser_ty ,
@@ -756,7 +756,7 @@ impl RustOutput {
         let doc = format!("Returns the CST for a parse of the {name} rule");
         quote! {
             #[doc = #doc]
-            fn #parse_fn(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a, Token, Rule>;
+            fn #parse_fn(self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule>;
         }
     }
 
@@ -765,7 +765,7 @@ impl RustOutput {
         let parse_fn = quote::format_ident!("parse_{}", name);
         let eof_variant = quote::format_ident!("EOF{}", snake_to_pascal_case(name));
         quote! {
-            fn #parse_fn(mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a, Token, Rule> {
+            fn #parse_fn(mut self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule> {
                 self.end_of_input = Token::#eof_variant;
                 self.parse_with(|parser, diags| parser.rule_part(diags), diags, Rule::Part)
             }
@@ -783,7 +783,7 @@ impl RustOutput {
             });
         }
         quote! {
-            fn rule_part(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+            fn rule_part(&mut self, diags: &mut Vec<Self::Diagnostic>) {
                 match self.end_of_input {
                     #(#arms)*
                     _ => {}
@@ -851,7 +851,7 @@ impl RustOutput {
         };
         quote! {
             #attr
-            fn #rule_fn ( & mut self , diags : & mut Vec < < Self as ParserCallbacks < 'a > > :: Diagnostic > ) #ret_type {
+            fn #rule_fn ( & mut self , diags : & mut Vec < Self :: Diagnostic > ) #ret_type {
                 #body
                 #return_val
             }
@@ -1351,7 +1351,7 @@ impl RustOutput {
                 let variant = snake_to_pascal_case_ident(*n);
                 let create_fn = quote::format_ident!("create_node_{}", n);
                 if *n == "error" {
-                    quote! { Rule::#variant => <Self as ParserCallbacks<'a>>::#create_fn(self, node_ref, diags), }
+                    quote! { Rule::#variant => Self::#create_fn(self, node_ref, diags), }
                 } else {
                     quote! { Rule::#variant => self.#create_fn(node_ref, diags), }
                 }
@@ -1405,12 +1405,12 @@ let rule_fns: Vec<_> = {
         let mut fns = Vec::new();
         // parse method
         fns.push(quote! {
-            fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a, Token, Rule>;
+            fn parse(self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule>;
         });
         if !sema.parts.is_empty() {
             let rule_fn = quote::format_ident!("rule_part");
             fns.push(quote! {
-                fn #rule_fn(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>);
+                fn #rule_fn(&mut self, diags: &mut Vec<Self::Diagnostic>);
             });
         }
         for rule in file.rule_decls(cst) {
@@ -1432,7 +1432,7 @@ let rule_fns: Vec<_> = {
             };
             fns.push(quote! {
                 #attr
-                fn #rule_fn(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) #ret_type;
+                fn #rule_fn(&mut self, diags: &mut Vec<Self::Diagnostic>) #ret_type;
             });
         }
         fns
@@ -1494,22 +1494,22 @@ let rule_fns: Vec<_> = {
 
             impl<'a, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, Token, Rule, Ctx>
             where
-                Parser<'a, Token, Rule, Ctx>: ParserCallbacks<'a>,
+                Self: ParserCallbacks<'a>,
             {
-                type Diag = <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::Diagnostic;
-                type Ctx = <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::Context;
+                type Diag = <Self as ParserCallbacks<'a>>::Diagnostic;
+                type Ctx = <Self as ParserCallbacks<'a>>::Context;
 
                 #[inline]
                 fn create_tokens_hook(ctx: &mut Self::Ctx, source: &'a str, diags: &mut Vec<Self::Diag>) -> (Vec<Token>, Vec<Span>) {
-                    <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::create_tokens(ctx, source, diags)
+                    Self::create_tokens(ctx, source, diags)
                 }
                 #[inline]
                 fn create_diagnostic_hook(&self, span: Span, message: String) -> Self::Diag {
-                    <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::create_diagnostic(self, span, message)
+                    Self::create_diagnostic(self, span, message)
                 }
                 #[inline]
                 fn predicate_skip_hook(&self, token: Token) -> bool {
-                    <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::predicate_skip(self, token)
+                    self.predicate_skip(token)
                 }
                 #[inline]
                 fn create_node(&mut self, rule: Rule, node_ref: NodeRef, diags: &mut Vec<Self::Diag>) {
@@ -1519,7 +1519,7 @@ let rule_fns: Vec<_> = {
                 }
                 #[inline]
                 fn create_node_error_hook(&mut self, node_ref: NodeRef, diags: &mut Vec<Self::Diag>) {
-                    <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::create_node_error(self, node_ref, diags)
+                    self.create_node_error(node_ref, diags)
                 }
                 #[inline]
                 fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {
@@ -1558,11 +1558,11 @@ pub trait Rules<'a>: ParserCallbacks<'a> + Sized {
             #[allow(clippy::while_let_loop, dead_code, unused_parens)]
             impl<'a, Ctx> Rules<'a> for Parser<'a, Token, Rule, Ctx>
             where
-                Parser<'a, Token, Rule, Ctx>: ParserCallbacks<'a>,
-                Ctx: From<<Parser<'a, Token, Rule, Ctx> as ParserHooks<'a, Token, Rule>>::Ctx>,
-                <Parser<'a, Token, Rule, Ctx> as ParserHooks<'a, Token, Rule>>::Ctx: From<Ctx>,
+                Self: ParserCallbacks<'a>,
+                Ctx: From<<Self as ParserHooks<'a, Token, Rule>>::Ctx>,
+                <Self as ParserHooks<'a, Token, Rule>>::Ctx: From<Ctx>,
             {
-                fn parse(mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a, Token, Rule> {
+                fn parse(mut self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule> {
                     self.end_of_input = Token::EOF;
                     self.parse_with(|parser, diags| parser.#start_rule_fn(diags), diags, Rule::#start_rule_variant)
                 }
