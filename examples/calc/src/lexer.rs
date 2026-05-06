@@ -1,6 +1,6 @@
-use lelwel::Span;
 use crate::parser::Diagnostic;
 use codespan_reporting::diagnostic::Label;
+use lelwel::Span;
 use logos::Logos;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -46,10 +46,7 @@ pub enum Token {
     Error,
 }
 
-pub fn tokenize(
-    source: &str,
-    diags: &mut Vec<Diagnostic>,
-) -> (Vec<Token>, Vec<Span>) {
+pub fn tokenize(source: &str, diags: &mut Vec<Diagnostic>) -> (Vec<Token>, Vec<Span>) {
     let lexer = Token::lexer(source);
     let mut tokens = vec![];
     let mut spans = vec![];

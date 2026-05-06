@@ -86,7 +86,10 @@ impl DeclarationSpecifiers {
     }
 }
 impl Declaration {
-    pub fn declaration_specifiers(&self, cst: &Cst<'_, Token, Rule>) -> Option<DeclarationSpecifiers> {
+    pub fn declaration_specifiers(
+        &self,
+        cst: &Cst<'_, Token, Rule>,
+    ) -> Option<DeclarationSpecifiers> {
         cst.children(self.syntax)
             .find_map(|node| DeclarationSpecifiers::cast(cst, node))
     }
@@ -114,7 +117,10 @@ impl InitDeclarator {
     }
 }
 impl FunctionDefinition {
-    pub fn declaration_specifiers(&self, cst: &Cst<'_, Token, Rule>) -> Option<DeclarationSpecifiers> {
+    pub fn declaration_specifiers(
+        &self,
+        cst: &Cst<'_, Token, Rule>,
+    ) -> Option<DeclarationSpecifiers> {
         cst.children(self.syntax)
             .find_map(|node| DeclarationSpecifiers::cast(cst, node))
     }

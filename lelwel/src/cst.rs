@@ -1,7 +1,7 @@
 use core::fmt;
 
+use crate::parser::{RuleType, TokenType};
 use crate::types::*;
-use crate::parser::{TokenType, RuleType};
 
 #[derive(Debug, Copy, Clone)]
 pub enum Node<T, R> {
@@ -131,7 +131,9 @@ where
         self.nodes[node_ref.0].clone()
     }
     pub fn span(&self, node_ref: NodeRef) -> Span {
-        fn find_token<'b, T: 'b, R: 'b>(mut iter: impl Iterator<Item = &'b Node<T, R>>) -> Option<usize> {
+        fn find_token<'b, T: 'b, R: 'b>(
+            mut iter: impl Iterator<Item = &'b Node<T, R>>,
+        ) -> Option<usize> {
             iter.find_map(|node| match node {
                 Node::Rule(..) => None,
                 Node::Token(_, idx) => Some(usize::from(*idx)),
@@ -206,7 +208,9 @@ where
     where
         T: PartialEq,
     {
-        self.data.match_token(node_ref, matched_token).map(|span| (&self.source[span.clone()], span))
+        self.data
+            .match_token(node_ref, matched_token)
+            .map(|span| (&self.source[span.clone()], span))
     }
     pub fn match_rule(&self, node_ref: NodeRef, matched_rule: R) -> bool
     where

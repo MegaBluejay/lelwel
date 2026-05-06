@@ -1,7 +1,7 @@
 use crate::parser::Diagnostic;
-use lelwel::Span;
 use codespan_reporting::diagnostic::Label;
 use herring::{Herring, Lexer};
+use lelwel::Span;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum LexerError {

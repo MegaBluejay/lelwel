@@ -5,9 +5,9 @@ use codespan_reporting::diagnostic::Severity;
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::term::{self, Config};
-use lexer::Token;
-use lelwel::{Cst, NodeRef, Node};
 use lelwel::Parser;
+use lelwel::{Cst, Node, NodeRef};
+use lexer::Token;
 use parser::*;
 use std::collections::HashMap;
 
@@ -41,15 +41,13 @@ fn to_value(cst: &Cst<'_, Token, Rule>, node_ref: NodeRef) -> Option<Value> {
                     .map(|child_node_ref| cst.children(child_node_ref))
                 {
                     let Some(key) = member_node_refs
-                        .find_map(|member_node_ref| {
-                            cst.match_token(member_node_ref, Token::String)
-                        })
+                        .find_map(|member_node_ref| cst.match_token(member_node_ref, Token::String))
                         .map(|(key_str, _)| key_str[1..key_str.len() - 1].to_owned())
                     else {
                         continue;
                     };
-                    let Some(val) = member_node_refs
-                        .find_map(|member_node_ref| to_value(cst, member_node_ref))
+                    let Some(val) =
+                        member_node_refs.find_map(|member_node_ref| to_value(cst, member_node_ref))
                     else {
                         continue;
                     };

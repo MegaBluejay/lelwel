@@ -1,6 +1,6 @@
 use crate::parser::Diagnostic;
-use lelwel::Span;
 use codespan_reporting::diagnostic::Label;
+use lelwel::Span;
 use logos::Logos;
 
 #[derive(Debug, Clone, PartialEq, Default)]

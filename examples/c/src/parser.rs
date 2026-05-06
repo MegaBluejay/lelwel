@@ -141,13 +141,7 @@ impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
             self.tokens[self.pos..]
                 .iter()
                 .enumerate()
-                .filter_map(|(i, tok)| {
-                    if !tok.is_skip() {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(|(i, tok)| if !tok.is_skip() { Some(i) } else { None })
                 .nth(1)
                 .is_some_and(|i| self.is_type_name(self.pos + i))
         } else {
@@ -339,9 +333,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
         if self.current != Token::Star && self.current != Token::LPar {
             return true;
         }
-        let mut it = self.tokens[self.pos..]
-            .iter()
-            .filter(|tok| !tok.is_skip());
+        let mut it = self.tokens[self.pos..].iter().filter(|tok| !tok.is_skip());
         while let Some(tok) = it.next() {
             match tok {
                 Token::Attribute => {

@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-mod types;
 mod cst;
 mod parser;
+mod types;
 
-pub use types::*;
 pub use cst::*;
 pub use parser::*;
+pub use types::*;

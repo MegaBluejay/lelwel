@@ -9,10 +9,18 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
     type Diagnostic = Diagnostic;
     type Context = ();
 
-    fn create_tokens(_context: &mut <Self as ParserCallbacks<'a>>::Context, source: &'a str, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> (Vec<Token>, Vec<Span>) {
+    fn create_tokens(
+        _context: &mut <Self as ParserCallbacks<'a>>::Context,
+        source: &'a str,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) -> (Vec<Token>, Vec<Span>) {
         tokenize(source, diags)
     }
-    fn create_diagnostic(&self, span: Span, message: String) -> <Self as ParserCallbacks<'a>>::Diagnostic {
+    fn create_diagnostic(
+        &self,
+        span: Span,
+        message: String,
+    ) -> <Self as ParserCallbacks<'a>>::Diagnostic {
         <Self as ParserCallbacks<'a>>::Diagnostic::error()
             .with_message(message)
             .with_label(Label::primary((), span))
