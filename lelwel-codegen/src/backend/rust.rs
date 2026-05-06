@@ -281,7 +281,7 @@ impl RustOutput {
 
             quote! {
                 #[allow(clippy::ptr_arg)]
-                pub trait ParserCallbacks<'a>: ParserHooks<'a, Token, Rule, Diagnostic = <Self as ParserCallbacks<'a>>::Diagnostic, Context = <Self as ParserCallbacks<'a>>::Context> {
+                pub trait ParserCallbacks<'a>: ParserHooks<'a, Token, Rule, Diag = <Self as ParserCallbacks<'a>>::Diagnostic, Ctx = <Self as ParserCallbacks<'a>>::Context> {
                     type Diagnostic;
                     type Context;
 
@@ -715,7 +715,7 @@ impl RustOutput {
             quote! { rec ( #self_ , diags , #lhs_ident ) ; }
         };
         let parser_ty = quote! { Parser < 'b , Token , Rule , Ctx > };
-        let diags_ty = quote! { Vec < < #parser_ty as ParserHooks < 'b , Token , Rule > > :: Diagnostic > };
+        let diags_ty = quote! { Vec < < #parser_ty as ParserHooks < 'b , Token , Rule > > :: Diag > };
         quote! {
             fn rec < 'b , Ctx > (
                 parser : & mut #parser_ty ,
@@ -725,8 +725,8 @@ impl RustOutput {
             ) #ret_type
             where
                 #parser_ty : ParserCallbacks < 'b > ,
-                Ctx : From < < #parser_ty as ParserHooks < 'b , Token , Rule > > :: Context > ,
-                < #parser_ty as ParserHooks < 'b , Token , Rule > > :: Context : From < Ctx > ,
+                Ctx : From < < #parser_ty as ParserHooks < 'b , Token , Rule > > :: Ctx > ,
+                < #parser_ty as ParserHooks < 'b , Token , Rule > > :: Ctx : From < Ctx > ,
             {
                 #node_kind_decl
                 match #parser . current {
@@ -1496,29 +1496,29 @@ let rule_fns: Vec<_> = {
             where
                 Parser<'a, Token, Rule, Ctx>: ParserCallbacks<'a>,
             {
-                type Diagnostic = <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::Diagnostic;
-                type Context = <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::Context;
+                type Diag = <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::Diagnostic;
+                type Ctx = <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::Context;
 
                 #[inline]
-                fn create_tokens(ctx: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>) {
+                fn create_tokens_hook(ctx: &mut Self::Ctx, source: &'a str, diags: &mut Vec<Self::Diag>) -> (Vec<Token>, Vec<Span>) {
                     <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::create_tokens(ctx, source, diags)
                 }
                 #[inline]
-                fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic {
+                fn create_diagnostic_hook(&self, span: Span, message: String) -> Self::Diag {
                     <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::create_diagnostic(self, span, message)
                 }
                 #[inline]
-                fn predicate_skip(&self, token: Token) -> bool {
+                fn predicate_skip_hook(&self, token: Token) -> bool {
                     <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::predicate_skip(self, token)
                 }
                 #[inline]
-                fn create_node(&mut self, rule: Rule, node_ref: NodeRef, diags: &mut Vec<Self::Diagnostic>) {
+                fn create_node(&mut self, rule: Rule, node_ref: NodeRef, diags: &mut Vec<Self::Diag>) {
                     match rule {
                         #(#create_arms)*
                     }
                 }
                 #[inline]
-                fn create_node_error(&mut self, node_ref: NodeRef, diags: &mut Vec<Self::Diagnostic>) {
+                fn create_node_error_hook(&mut self, node_ref: NodeRef, diags: &mut Vec<Self::Diag>) {
                     <Parser<'a, Token, Rule, Ctx> as ParserCallbacks<'a>>::create_node_error(self, node_ref, diags)
                 }
                 #[inline]
@@ -1559,8 +1559,8 @@ pub trait Rules<'a>: ParserCallbacks<'a> + Sized {
             impl<'a, Ctx> Rules<'a> for Parser<'a, Token, Rule, Ctx>
             where
                 Parser<'a, Token, Rule, Ctx>: ParserCallbacks<'a>,
-                Ctx: From<<Parser<'a, Token, Rule, Ctx> as ParserHooks<'a, Token, Rule>>::Context>,
-                <Parser<'a, Token, Rule, Ctx> as ParserHooks<'a, Token, Rule>>::Context: From<Ctx>,
+                Ctx: From<<Parser<'a, Token, Rule, Ctx> as ParserHooks<'a, Token, Rule>>::Ctx>,
+                <Parser<'a, Token, Rule, Ctx> as ParserHooks<'a, Token, Rule>>::Ctx: From<Ctx>,
             {
                 fn parse(mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a, Token, Rule> {
                     self.end_of_input = Token::EOF;
