@@ -55,7 +55,7 @@ pub struct Parser<'a, T: TokenType, R: RuleType, Ctx> {
 #[macro_export]
 macro_rules! err {
     [$self:expr, $msg:literal] => {
-        $self.create_diagnostic($self.span(), String::from($msg))
+        $self.create_diagnostic_hook($self.span(), String::from($msg))
     }
 }
 
@@ -84,15 +84,7 @@ where
     pub fn active_error(&self) -> bool {
         self.error_node.is_some() || self.error_since_advance
     }
-    pub fn create_diagnostic(&self, span: Span, message: String) -> Diag<Self> {
-        self.create_diagnostic_hook(span, message)
-    }
-    pub fn predicate_skip(&self, token: T) -> bool {
-        self.predicate_skip_hook(token)
-    }
-    pub fn create_node_error(&mut self, node_ref: NodeRef, diags: &mut Vec<Diag<Self>>) {
-        self.create_node_error_hook(node_ref, diags)
-    }
+
     pub fn error(&mut self, diags: &mut Vec<Diag<Self>>, diag: Diag<Self>) {
         if self.active_error() {
             return;
@@ -109,7 +101,7 @@ where
         loop {
             self.pos += 1;
             match self.tokens.get(self.pos) {
-                Some(token) if token.is_skip() || self.predicate_skip(*token) => {
+                Some(token) if token.is_skip() || self.predicate_skip_hook(*token) => {
                     self.cst.data.advance(*token, true);
                     continue;
                 }
@@ -127,7 +119,7 @@ where
     fn init_skip(&mut self) {
         loop {
             match self.tokens.get(self.pos) {
-                Some(token) if token.is_skip() || self.predicate_skip(*token) => {
+                Some(token) if token.is_skip() || self.predicate_skip_hook(*token) => {
                     self.pos += 1;
                     self.cst.data.advance(*token, true);
                     continue;

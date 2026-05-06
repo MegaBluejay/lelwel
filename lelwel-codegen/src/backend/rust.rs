@@ -1081,7 +1081,7 @@ impl RustOutput {
                     RuleNodeElision::None => {
                         quote! {
                             let closed = #parser_name.close(m, Rule::Error, diags);
-                            #parser_name.create_node_error(NodeRef(closed.0), diags);
+                            #parser_name.create_node_error_hook(NodeRef(closed.0), diags);
                         }
                     }
                     RuleNodeElision::Conditional => {
@@ -1089,7 +1089,7 @@ impl RustOutput {
                             if !elide {
                                 let m = #parser_name.open_before(start, diags);
                                 let closed = #parser_name.close(m, Rule::Error, diags);
-                                #parser_name.create_node_error(NodeRef(closed.0), diags);
+                                #parser_name.create_node_error_hook(NodeRef(closed.0), diags);
                             }
                         }
                     }
@@ -1350,11 +1350,7 @@ impl RustOutput {
             .map(|n| {
                 let variant = snake_to_pascal_case_ident(*n);
                 let create_fn = quote::format_ident!("create_node_{}", n);
-                if *n == "error" {
-                    quote! { Rule::#variant => Self::#create_fn(self, node_ref, diags), }
-                } else {
-                    quote! { Rule::#variant => self.#create_fn(node_ref, diags), }
-                }
+                quote! { Rule::#variant => self.#create_fn(node_ref, diags), }
             })
             .collect();
         let delete_arms: Vec<_> = rule_names
