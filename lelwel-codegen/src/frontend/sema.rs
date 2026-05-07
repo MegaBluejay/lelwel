@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::ast::*;
 use super::diag::LanguageErrors;
 use super::parser::*;
+use super::{Cst, NodeRef, Span};
 use crate::backend::rust::snake_to_pascal_case;
 
 pub struct SemanticPass;

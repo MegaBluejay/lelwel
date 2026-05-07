@@ -4,7 +4,8 @@
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::NoColor;
 use codespan_reporting::term::{self, DisplayStyle};
-use lelwel_codegen::frontend::parser::Parser;
+use lelwel::Parser;
+use lelwel_codegen::frontend::parser::Rules;
 use lelwel_codegen::frontend::sema::SemanticPass;
 use std::io::BufWriter;
 

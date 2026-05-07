@@ -2,7 +2,7 @@ use crate::frontend::ast::{AstNode, Regex, RuleDecl};
 use crate::frontend::lexer::Token;
 use crate::frontend::sema::TokenName;
 use crate::{Cst, NodeRef, Rule, SemanticData};
-use logos::Span;
+use crate::frontend::Span;
 use std::collections::BTreeSet;
 
 use super::lookup::*;

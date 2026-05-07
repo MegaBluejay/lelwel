@@ -1,5 +1,5 @@
 use crate::frontend::lexer::Token;
-use crate::{Cst, CstChildren, Node, NodeRef, Rule, Span};
+use crate::{Cst, Node, NodeRef, Rule, Span};
 
 pub trait AstNode {
     fn cast(cst: &Cst<'_>, syntax: NodeRef) -> Option<Self>
@@ -109,14 +109,23 @@ ast_node!(NodeCreation);
 ast_node!(Commit);
 ast_node!(Return);
 
-impl Cst<'_> {
+trait CstExt {
+    fn child_node<T: AstNode>(&self, syntax: NodeRef) -> Option<T>;
+    fn child_node_iter<T: AstNode>(
+        &self,
+        syntax: NodeRef,
+    ) -> impl Iterator<Item = T> + '_;
+    fn child_token(&self, syntax: NodeRef, token: Token) -> Option<(&str, Span)>;
+}
+
+impl CstExt for lelwel::Cst<'_, Token, Rule> {
     fn child_node<T: AstNode>(&self, syntax: NodeRef) -> Option<T> {
         self.children(syntax).find_map(|c| T::cast(self, c))
     }
     fn child_node_iter<T: AstNode>(
         &self,
         syntax: NodeRef,
-    ) -> std::iter::FilterMap<CstChildren<'_>, impl FnMut(NodeRef) -> Option<T> + '_> {
+    ) -> impl Iterator<Item = T> + '_ {
         self.children(syntax).filter_map(|c| T::cast(self, c))
     }
     fn child_token(&self, syntax: NodeRef, token: Token) -> Option<(&str, Span)> {
@@ -133,15 +142,7 @@ impl File {
     pub fn token_decls<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<
-        std::iter::Flatten<
-            std::iter::FilterMap<
-                CstChildren<'a>,
-                impl FnMut(NodeRef) -> Option<CstChildren<'a>> + use<'a>,
-            >,
-        >,
-        impl FnMut(NodeRef) -> Option<TokenDecl> + 'a + use<'a>,
-    > {
+    ) -> impl Iterator<Item = TokenDecl> + 'a {
         cst.children(self.syntax)
             .filter_map(|c| cst.match_rule(c, Rule::TokenList).then(|| cst.children(c)))
             .flatten()
@@ -150,40 +151,31 @@ impl File {
     pub fn rule_decls<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<CstChildren<'a>, impl FnMut(NodeRef) -> Option<RuleDecl> + 'a + use<'a>>
-    {
+    ) -> impl Iterator<Item = RuleDecl> + 'a {
         cst.child_node_iter(self.syntax)
     }
     pub fn start_decls<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<
-        CstChildren<'a>,
-        impl FnMut(NodeRef) -> Option<StartDecl> + 'a + use<'a>,
-    > {
+    ) -> impl Iterator<Item = StartDecl> + 'a {
         cst.child_node_iter(self.syntax)
     }
     pub fn right_decls<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<
-        CstChildren<'a>,
-        impl FnMut(NodeRef) -> Option<RightDecl> + 'a + use<'a>,
-    > {
+    ) -> impl Iterator<Item = RightDecl> + 'a {
         cst.child_node_iter(self.syntax)
     }
     pub fn skip_decls<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<CstChildren<'a>, impl FnMut(NodeRef) -> Option<SkipDecl> + 'a + use<'a>>
-    {
+    ) -> impl Iterator<Item = SkipDecl> + 'a {
         cst.child_node_iter(self.syntax)
     }
     pub fn part_decls<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<CstChildren<'a>, impl FnMut(NodeRef) -> Option<PartDecl> + 'a + use<'a>>
-    {
+    ) -> impl Iterator<Item = PartDecl> + 'a {
         cst.child_node_iter(self.syntax)
     }
 }
@@ -249,8 +241,7 @@ impl OrderedChoice {
     pub fn operands<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<CstChildren<'a>, impl FnMut(NodeRef) -> Option<Regex> + 'a + use<'a>>
-    {
+    ) -> impl Iterator<Item = Regex> + 'a {
         cst.child_node_iter(self.syntax)
     }
 }
@@ -258,8 +249,7 @@ impl Alternation {
     pub fn operands<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<CstChildren<'a>, impl FnMut(NodeRef) -> Option<Regex> + 'a + use<'a>>
-    {
+    ) -> impl Iterator<Item = Regex> + 'a {
         cst.child_node_iter(self.syntax)
     }
 }
@@ -267,8 +257,7 @@ impl Concat {
     pub fn operands<'a>(
         &self,
         cst: &'a Cst<'_>,
-    ) -> std::iter::FilterMap<CstChildren<'a>, impl FnMut(NodeRef) -> Option<Regex> + 'a + use<'a>>
-    {
+    ) -> impl Iterator<Item = Regex> + 'a {
         cst.child_node_iter(self.syntax)
     }
 }

@@ -1,6 +1,6 @@
 use crate::VERSION;
 use crate::frontend::ast::*;
-use crate::frontend::parser::{Cst, NodeRef};
+use crate::frontend::{Cst, NodeRef};
 use crate::frontend::sema::*;
 use proc_macro2::TokenStream;
 use quote::quote;

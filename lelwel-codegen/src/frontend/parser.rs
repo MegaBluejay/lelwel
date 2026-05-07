@@ -5,7 +5,7 @@ pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 
 include!("./generated.rs");
 
-impl<'a> ParserCallbacks<'a> for Parser<'a> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
     type Diagnostic = Diagnostic;
     type Context = ();
 

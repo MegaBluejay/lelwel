@@ -2,7 +2,7 @@ use codespan_reporting::files::{Files, SimpleFile};
 use lsp_types::{Location, Url};
 
 use crate::frontend::lexer::Token;
-use crate::frontend::parser::Span;
+use crate::frontend::Span;
 use crate::{Cst, Node, NodeRef, Rule, SemanticData};
 
 fn contains(span: &Span, pos: usize) -> bool {

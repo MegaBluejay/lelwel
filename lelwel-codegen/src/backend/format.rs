@@ -1,13 +1,11 @@
 #![cfg(any(feature = "lsp", feature = "cli"))]
 
-use crate::{
-    Cst, NodeRef, Span,
-    frontend::{
-        ast::{self, AstNode},
-        lexer::Token,
-        parser::{Node, Rule},
-    },
+use crate::frontend::{
+    ast::{self, AstNode},
+    lexer::Token,
+    Node, Rule, Span,
 };
+use crate::{Cst, NodeRef};
 use dprint_core::formatting::*;
 use std::rc::Rc;
 

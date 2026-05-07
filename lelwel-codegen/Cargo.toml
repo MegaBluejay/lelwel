@@ -13,6 +13,7 @@ categories = ["parsing"]
 rust-2018-idioms = { level = "deny" }
 
 [dependencies]
+lelwel = { path = "../lelwel" }
 logos = "0.16"
 codespan-reporting = "0.13"
 rustc-hash = "2.1"

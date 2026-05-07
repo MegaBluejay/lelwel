@@ -1,6 +1,7 @@
 use codespan_reporting::diagnostic::Label;
 
-use super::parser::{Diagnostic, Span};
+use super::parser::Diagnostic;
+use crate::frontend::Span;
 
 pub const INVALID_BINDING_POS: &str = "E001";
 pub const INVALID_PREDICATE_POS: &str = "E002";

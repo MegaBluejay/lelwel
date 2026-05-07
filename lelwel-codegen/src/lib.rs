@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use lelwel::Parser;
 use codespan_reporting::diagnostic::Severity;
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
@@ -17,6 +18,11 @@ use self::backend::graphviz::GraphvizOutput;
 pub mod backend;
 pub mod frontend;
 pub mod ide;
+
+pub use crate::frontend::{
+    Cst, CstChildren, CstData, CstIndex, MarkClosed, MarkOpened, MarkTruncation, Node, NodeRef,
+    Rule, Span, Token,
+};
 
 const VERSION: &str = "0.10.4";
 

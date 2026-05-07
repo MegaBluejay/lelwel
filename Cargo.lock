@@ -436,6 +436,7 @@ dependencies = [
  "codespan-lsp",
  "codespan-reporting",
  "dprint-core",
+ "lelwel",
  "logos",
  "lsp-server",
  "lsp-types 0.91.1",

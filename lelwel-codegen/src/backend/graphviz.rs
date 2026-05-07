@@ -1,5 +1,6 @@
 use crate::frontend::ast::{AstNode, File, Named, Regex, RuleDecl, TokenDecl};
-use crate::{Cst, NodeRef, SemanticData};
+use crate::frontend::Cst;
+use crate::{NodeRef, SemanticData};
 use std::io::{BufWriter, Write};
 
 pub struct GraphvizOutput;
