@@ -461,4 +461,3 @@ where
     }
 }
 
-// CstData-specific parser impl block removed — examples use builder.inner() directly

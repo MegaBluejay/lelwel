@@ -50,49 +50,10 @@ pub struct CstData<T, R> {
     non_skip_len: usize,
 }
 
-#[allow(dead_code)]
 impl<T, R> CstData<T, R>
 where
     R: RuleType,
 {
-    pub(crate) fn open(&mut self) -> MarkOpened {
-        let mark = MarkOpened(self.nodes.len());
-        self.nodes.push(Node::Rule(R::error(), 0.into()));
-        mark
-    }
-    pub(crate) fn close(&mut self, mark: MarkOpened, rule: R) -> MarkClosed {
-        let len = self.nodes.len() - 1;
-        self.nodes[mark.0] = Node::Rule(
-            rule,
-            (if mark.0 > len { 0 } else { len - mark.0 }).into(),
-        );
-        MarkClosed(mark.0)
-    }
-    pub(crate) fn close_root(&mut self, mark: MarkOpened, rule: R) -> MarkClosed {
-        self.nodes[mark.0] = Node::Rule(rule, (self.nodes.len() - 1 - mark.0).into());
-        MarkClosed(mark.0)
-    }
-    pub(crate) fn advance(&mut self, token: T, _skip: bool)
-    where
-        T: TokenType,
-    {
-        self.nodes.push(Node::Token(token, self.token_count.into()));
-        self.token_count += 1;
-    }
-    pub(crate) fn open_before(&mut self, mark: MarkClosed) -> MarkOpened {
-        self.nodes.insert(mark.0, Node::Rule(R::error(), 0.into()));
-        MarkOpened(mark.0)
-    }
-    pub(crate) fn mark(&self) -> MarkClosed {
-        MarkClosed(self.nodes.len())
-    }
-    pub(crate) fn mark_truncation(&self) -> MarkTruncation {
-        MarkTruncation { node_count: self.nodes.len(), token_count: self.token_count }
-    }
-    pub(crate) fn truncate(&mut self, mark: MarkTruncation) {
-        self.nodes.truncate(mark.node_count);
-        self.token_count = mark.token_count;
-    }
     pub fn children(&self, node_ref: NodeRef) -> CstChildren<'_, T, R> {
         let iter = if let Node::Rule(_, end_offset) = self.nodes[node_ref.0] {
             self.nodes[node_ref.0 + 1..node_ref.0 + usize::from(end_offset) + 1].iter()
