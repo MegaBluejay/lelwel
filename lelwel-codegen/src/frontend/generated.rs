@@ -1,5 +1,5 @@
 use lelwel::{
-    TokenType, RuleType, ParserHooks, Parser, NodeRef, Cst, Span, err, MarkClosed,
+    TokenType, RuleType, CstBuilder, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err,
 };
 impl TokenType for Token {
     #[inline]
@@ -295,7 +295,7 @@ pub trait ParserCallbacks<
     ///Called when semantic predicate `?1` in rule `decl` is visited.
     fn predicate_decl_1(&self) -> bool;
 }
-impl<'a, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, Token, Rule, Ctx>
+impl<'a, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, CstData<Token, Rule>, Ctx>
 where
     Self: ParserCallbacks<'a>,
 {
@@ -378,7 +378,7 @@ macro_rules! expect {
 macro_rules! try_expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
         if let Token:: $token = $self .current { $self .advance(false, $diags); } else {
-        if $self .in_ordered_choice { return None; } $self .error($diags, err![$self,
+        if $self .builder.in_ordered_choice { return None; } $self .error($diags, err![$self,
         $msg]); }
     };
 }
@@ -401,7 +401,7 @@ pub trait Rules<'a>: ParserCallbacks<'a> + Sized {
     fn rule_postfix(&mut self, diags: &mut Vec<Self::Diagnostic>);
 }
 #[allow(clippy::while_let_loop, dead_code, unused_parens)]
-impl<'a, Ctx> Rules<'a> for Parser<'a, Token, Rule, Ctx>
+impl<'a, Ctx> Rules<'a> for Parser<'a, CstData<Token, Rule>, Ctx>
 where
     Self: ParserCallbacks<'a>,
     Ctx: From<<Self as ParserHooks<'a, Token, Rule>>::Ctx>,
@@ -409,7 +409,9 @@ where
 {
     fn parse(mut self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule> {
         self.end_of_input = Token::EOF;
-        self.parse_with(|parser, diags| parser.rule_file(diags), diags, Rule::File)
+        let source = self.builder.source();
+        let data = self.parse_with(|parser, diags| parser.rule_file(diags), diags, Rule::File);
+        Cst::new(source, data)
     }
     fn rule_file(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         loop {
@@ -475,7 +477,6 @@ where
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
         expect!(Semi, "invalid syntax, expected: ';'", self, diags);
         let closed = self.close(m, Rule::StartDecl, diags);
-        self.create_node_start_decl(NodeRef(closed.0), diags);
     }
     fn rule_right_decl(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         let m = self.open(diags);
@@ -552,7 +553,6 @@ where
         }
         expect!(Semi, "invalid syntax, expected: ';'", self, diags);
         let closed = self.close(m, Rule::RightDecl, diags);
-        self.create_node_right_decl(NodeRef(closed.0), diags);
     }
     fn rule_skip_decl(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         let m = self.open(diags);
@@ -629,7 +629,6 @@ where
         }
         expect!(Semi, "invalid syntax, expected: ';'", self, diags);
         let closed = self.close(m, Rule::SkipDecl, diags);
-        self.create_node_skip_decl(NodeRef(closed.0), diags);
     }
     fn rule_part_decl(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         let m = self.open(diags);
@@ -663,7 +662,6 @@ where
         }
         expect!(Semi, "invalid syntax, expected: ';'", self, diags);
         let closed = self.close(m, Rule::PartDecl, diags);
-        self.create_node_part_decl(NodeRef(closed.0), diags);
     }
     fn rule_token_list(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         let m = self.open(diags);
@@ -697,7 +695,6 @@ where
         }
         expect!(Semi, "invalid syntax, expected: ';'", self, diags);
         let closed = self.close(m, Rule::TokenList, diags);
-        self.create_node_token_list(NodeRef(closed.0), diags);
     }
     fn rule_token_decl(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         let m = self.open(diags);
@@ -739,7 +736,6 @@ where
             }
         }
         let closed = self.close(m, Rule::TokenDecl, diags);
-        self.create_node_token_decl(NodeRef(closed.0), diags);
     }
     fn rule_rule_decl(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         let m = self.open(diags);
@@ -820,7 +816,6 @@ where
         }
         expect!(Semi, "invalid syntax, expected: ';'", self, diags);
         let closed = self.close(m, Rule::RuleDecl, diags);
-        self.create_node_rule_decl(NodeRef(closed.0), diags);
     }
     fn rule_regex(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         self.rule_alternation(diags);
@@ -867,7 +862,6 @@ where
                     }
                     let open_node = self.open_before(start, diags);
                     self.close(open_node, Rule::Alternation, diags);
-                    self.create_node_alternation(NodeRef(start.0), diags);
                     break;
                 }
                 Token::RBrak | Token::RPar | Token::Semi => break,
@@ -939,7 +933,6 @@ where
                     }
                     let open_node = self.open_before(start, diags);
                     self.close(open_node, Rule::OrderedChoice, diags);
-                    self.create_node_ordered_choice(NodeRef(start.0), diags);
                     break;
                 }
                 Token::Or | Token::RBrak | Token::RPar | Token::Semi => break,
@@ -1040,7 +1033,6 @@ where
                     }
                     let open_node = self.open_before(start, diags);
                     self.close(open_node, Rule::Concat, diags);
-                    self.create_node_concat(NodeRef(start.0), diags);
                     break;
                 }
                 Token::Or | Token::RBrak | Token::RPar | Token::Semi | Token::Slash => {
@@ -1076,21 +1068,20 @@ where
     #[allow(unused_assignments)]
     fn rule_postfix(&mut self, diags: &mut Vec<Self::Diagnostic>) {
         fn rec<'b, Ctx>(
-            parser: &mut Parser<'b, Token, Rule, Ctx>,
+            parser: &mut Parser<'b, CstData<Token, Rule>, Ctx>,
             diags: &mut Vec<
-                <Parser<'b, Token, Rule, Ctx> as ParserCallbacks<'b>>::Diagnostic,
+                <Parser<'b, CstData<Token, Rule>, Ctx> as ParserCallbacks<'b>>::Diagnostic,
             >,
-            mut lhs: MarkClosed,
+            mut lhs: usize,
         )
         where
-            Parser<'b, Token, Rule, Ctx>: ParserCallbacks<'b>,
+            Parser<'b, CstData<Token, Rule>, Ctx>: ParserCallbacks<'b>,
             Ctx: From<
-                <Parser<'b, Token, Rule, Ctx> as ParserHooks<'b, Token, Rule>>::Ctx,
+                <Parser<'b, CstData<Token, Rule>, Ctx> as ParserHooks<'b, Token, Rule>>::Ctx,
             >,
             <Parser<
                 'b,
-                Token,
-                Rule,
+                CstData<Token, Rule>,
                 Ctx,
             > as ParserHooks<'b, Token, Rule>>::Ctx: From<Ctx>,
         {
@@ -1155,7 +1146,6 @@ where
                     expect!(RPar, "invalid syntax, expected: ')'", parser, diags);
                     node_kind = Rule::Paren;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::LBrak => {
                     let m = parser.open(diags);
@@ -1164,14 +1154,12 @@ where
                     expect!(RBrak, "invalid syntax, expected: ']'", parser, diags);
                     node_kind = Rule::Optional;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::Id => {
                     let m = parser.open(diags);
                     expect!(Id, "invalid syntax, expected: <identifier>", parser, diags);
                     node_kind = Rule::Name;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::Str => {
                     let m = parser.open(diags);
@@ -1180,7 +1168,6 @@ where
                     );
                     node_kind = Rule::Symbol;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::Predicate => {
                     let m = parser.open(diags);
@@ -1190,7 +1177,6 @@ where
                     );
                     node_kind = Rule::Predicate;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::Action => {
                     let m = parser.open(diags);
@@ -1200,7 +1186,6 @@ where
                     );
                     node_kind = Rule::Action;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::Assertion => {
                     let m = parser.open(diags);
@@ -1210,7 +1195,6 @@ where
                     );
                     node_kind = Rule::Assertion;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::NodeRename => {
                     let m = parser.open(diags);
@@ -1220,7 +1204,6 @@ where
                     );
                     node_kind = Rule::NodeRename;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::NodeMarker => {
                     let m = parser.open(diags);
@@ -1230,7 +1213,6 @@ where
                     );
                     node_kind = Rule::NodeMarker;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::NodeCreation => {
                     let m = parser.open(diags);
@@ -1240,28 +1222,24 @@ where
                     );
                     node_kind = Rule::NodeCreation;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::Hat => {
                     let m = parser.open(diags);
                     expect!(Hat, "invalid syntax, expected: '^'", parser, diags);
                     node_kind = Rule::NodeElision;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::Tilde => {
                     let m = parser.open(diags);
                     expect!(Tilde, "invalid syntax, expected: '~'", parser, diags);
                     node_kind = Rule::Commit;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 Token::And => {
                     let m = parser.open(diags);
                     expect!(And, "invalid syntax, expected: '&'", parser, diags);
                     node_kind = Rule::Return;
                     let closed = parser.close(m, node_kind, diags);
-                    parser.create_node(node_kind, NodeRef(closed.0), diags);
                 }
                 _ => {
                     parser
@@ -1282,7 +1260,6 @@ where
                         expect!(Star, "invalid syntax, expected: '*'", parser, diags);
                         node_kind = Rule::Star;
                         let closed = parser.close(m, node_kind, diags);
-                        parser.create_node(node_kind, NodeRef(closed.0), diags);
                         lhs = closed;
                         continue;
                     }
@@ -1291,7 +1268,6 @@ where
                         expect!(Plus, "invalid syntax, expected: '+'", parser, diags);
                         node_kind = Rule::Plus;
                         let closed = parser.close(m, node_kind, diags);
-                        parser.create_node(node_kind, NodeRef(closed.0), diags);
                         lhs = closed;
                         continue;
                     }

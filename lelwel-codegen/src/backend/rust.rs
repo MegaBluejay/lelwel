@@ -117,7 +117,7 @@ impl RustOutput {
     fn gen_parser(sema: &SemanticData<'_>) -> TokenStream {
         let callbacks = Self::gen_parser_callbacks(sema, false, BTreeMap::default());
         quote! {
-            use lelwel::{ParserHooks, Parser, Span, Cst, NodeRef};
+            use lelwel::{ParserHooks, Parser, Span, Cst, NodeRef, CstData};
             use super::lexer::{Token, tokenize};
             use codespan_reporting::diagnostic::Label;
             pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
@@ -356,7 +356,7 @@ impl RustOutput {
             }
 
             quote! {
-                impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
+                impl<'a> ParserCallbacks<'a> for Parser<'a, CstData<Token, Rule>, ()> {
                     type Diagnostic = Diagnostic;
                     type Context = ();
 
@@ -404,16 +404,17 @@ impl RustOutput {
             quote::format_ident!("close")
         };
         let variant = snake_to_pascal_case_ident(name);
-        let close_and_create = if has_rule_rename {
-            quote! {
-                let closed = #parser_name.#close_method(m, node_kind, diags);
-                #parser_name.create_node(node_kind, NodeRef(closed.0), diags);
+        let close_and_assign = if has_rule_rename {
+            if assign_lhs {
+                quote! { let closed = #parser_name.#close_method(m, node_kind, diags); }
+            } else {
+                quote! { #parser_name.#close_method(m, node_kind, diags); }
             }
         } else {
-            let create_node_method = quote::format_ident!("create_node_{}", name);
-            quote! {
-                let closed = #parser_name.#close_method(m, Rule::#variant, diags);
-                #parser_name.#create_node_method(NodeRef(closed.0), diags);
+            if assign_lhs {
+                quote! { let closed = #parser_name.#close_method(m, Rule::#variant, diags); }
+            } else {
+                quote! { #parser_name.#close_method(m, Rule::#variant, diags); }
             }
         };
         let assign = if assign_lhs {
@@ -422,7 +423,7 @@ impl RustOutput {
             TokenStream::new()
         };
         quote! {
-            #close_and_create
+            #close_and_assign
             #assign
         }
     }
@@ -760,14 +761,14 @@ impl RustOutput {
         } else {
             quote! { rec ( #self_ , diags , #lhs_ident ) ; }
         };
-        let parser_ty = quote! { Parser < 'b , Token , Rule , Ctx > };
+        let parser_ty = quote! { Parser < 'b , CstData < Token , Rule > , Ctx > };
         let diags_ty = quote! { Vec < < #parser_ty as ParserCallbacks < 'b > > :: Diagnostic > };
         quote! {
             fn rec < 'b , Ctx > (
                 parser : & mut #parser_ty ,
                 diags : & mut #diags_ty ,
                 #min_bp_param
-                mut lhs : MarkClosed ,
+                mut lhs : usize ,
             ) #ret_type
             where
                 #parser_ty : ParserCallbacks < 'b > ,
@@ -811,10 +812,12 @@ impl RustOutput {
         let parse_fn = quote::format_ident!("parse_{}", name);
         let eof_variant = quote::format_ident!("EOF{}", snake_to_pascal_case(name));
         quote! {
-            fn #parse_fn(mut self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule> {
-                self.end_of_input = Token::#eof_variant;
-                self.parse_with(|parser, diags| parser.rule_part(diags), diags, Rule::Part)
-            }
+                fn #parse_fn(mut self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule> {
+                    self.end_of_input = Token::#eof_variant;
+                    let source = self.builder.source();
+                    let data = self.parse_with(|parser, diags| parser.rule_part(diags), diags, Rule::Part);
+                    Cst::new(source, data)
+                }
         }
     }
 
@@ -1053,7 +1056,7 @@ impl RustOutput {
         };
         let ordered_choice_return = if in_choice {
             quote! {
-                if #parser_name.in_ordered_choice {
+                if #parser_name.builder.in_ordered_choice {
                     return None;
                 }
             }
@@ -1142,22 +1145,22 @@ impl RustOutput {
                     quote::format_ident!("m{}", creation.number(cst).unwrap())
                 };
                 let variant = snake_to_pascal_case_ident(node_name);
-                let create_fn = quote::format_ident!("create_node_{}", node_name);
                 quote! {
                     let open_node = #parser_name.open_before(#mark, diags);
                     #parser_name.close(open_node, Rule::#variant, diags);
-                    #parser_name.#create_fn(NodeRef(#mark.0), diags);
                 }
             }
             Regex::Commit(_) => {
-                quote! { #parser_name.in_ordered_choice = false; }
+                quote! { #parser_name.builder.in_ordered_choice = false; }
             }
             Regex::Return(_) => {
                 let error_handling = match rule_elision {
                     RuleNodeElision::None => {
                         quote! {
                             let closed = #parser_name.close(m, Rule::Error, diags);
-                            #parser_name.create_node_error_hook(NodeRef(closed.0), diags);
+                            if let Some(nr) = #parser_name.builder.node_ref(closed) {
+                                #parser_name.create_node_error_hook(nr, diags);
+                            }
                         }
                     }
                     RuleNodeElision::Conditional => {
@@ -1165,7 +1168,9 @@ impl RustOutput {
                             if !elide {
                                 let m = #parser_name.open_before(start, diags);
                                 let closed = #parser_name.close(m, Rule::Error, diags);
-                                #parser_name.create_node_error_hook(NodeRef(closed.0), diags);
+                                if let Some(nr) = #parser_name.builder.node_ref(closed) {
+                                    #parser_name.create_node_error_hook(nr, diags);
+                                }
                             }
                         }
                     }
@@ -1343,13 +1348,13 @@ impl RustOutput {
                 );
                 let invalid_msg = gen_syntax_error_message(&[]);
                 quote! {
-                    #parser_name.in_ordered_choice = true;
+                    #parser_name.builder.in_ordered_choice = true;
                     'ordered_choice: {
                         let state = #parser_name.get_state(diags);
                         #elision_state
                         #node_kind_state
                         #(#branches)*
-                        #parser_name.in_ordered_choice = false;
+                        #parser_name.builder.in_ordered_choice = false;
                         if matches!(#parser_name.current, #last_predict_pattern) {
                             #last_body
                         } else {
@@ -1578,20 +1583,9 @@ impl RustOutput {
             fns
         };
         let callbacks = Self::gen_parser_callbacks(sema, true, rule_names);
-        let has_left_recursive = sema.recursive.values().any(|branches| {
-            branches
-                .branches()
-                .iter()
-                .any(|rec| matches!(rec, Recursion::Left(..) | Recursion::LeftRight(..)))
-        });
-        let mark_closed_import = if has_left_recursive {
-            quote! { , MarkClosed }
-        } else {
-            TokenStream::new()
-        };
 
         quote! {
-                    use lelwel::{TokenType, RuleType, ParserHooks, Parser, NodeRef, Cst, Span, err #mark_closed_import};
+                    use lelwel::{TokenType, RuleType, CstBuilder, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err};
 
                     impl TokenType for Token {
                         #[inline]
@@ -1632,7 +1626,7 @@ impl RustOutput {
 
                     #callbacks
 
-                    impl<'a, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, Token, Rule, Ctx>
+                    impl<'a, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, CstData<Token, Rule>, Ctx>
                     where
                         Self: ParserCallbacks<'a>,
                     {
@@ -1682,7 +1676,7 @@ impl RustOutput {
                             if let Token::$token = $self.current {
                                 $self.advance(false, $diags);
                             } else {
-                                if $self.in_ordered_choice {
+                                if $self.builder.in_ordered_choice {
                                     return None;
                                 }
                                 $self.error($diags, err![$self, $msg]);
@@ -1696,7 +1690,7 @@ impl RustOutput {
                     }
 
                     #[allow(clippy::while_let_loop, dead_code, unused_parens)]
-                    impl<'a, Ctx> Rules<'a> for Parser<'a, Token, Rule, Ctx>
+                    impl<'a, Ctx> Rules<'a> for Parser<'a, CstData<Token, Rule>, Ctx>
                     where
                         Self: ParserCallbacks<'a>,
                         Ctx: From<<Self as ParserHooks<'a, Token, Rule>>::Ctx>,
@@ -1704,7 +1698,9 @@ impl RustOutput {
                     {
                         fn parse(mut self, diags: &mut Vec<Self::Diagnostic>) -> Cst<'a, Token, Rule> {
                             self.end_of_input = Token::EOF;
-                            self.parse_with(|parser, diags| parser.#start_rule_fn(diags), diags, Rule::#start_rule_variant)
+                            let source = self.builder.source();
+                            let data = self.parse_with(|parser, diags| parser.#start_rule_fn(diags), diags, Rule::#start_rule_variant);
+                            Cst::new(source, data)
                         }
                         #(#parts_impl)*
                         #rule_part_impl
