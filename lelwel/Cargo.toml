@@ -12,3 +12,6 @@ categories = ["parsing"]
 rust-2018-idioms = { level = "deny" }
 
 [dependencies]
+
+[dev-dependencies]
+cstree = "0.14.0"
