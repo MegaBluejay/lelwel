@@ -14,6 +14,14 @@ pub trait RuleType: Copy + Clone + PartialEq + Eq + Debug + 'static {
     fn error() -> Self;
 }
 
+/// Abstract interface for CST tree construction.
+///
+/// Has no notion of skip/trivia tokens — all tokens arriving via [`token()`](CstBuilder::token)
+/// are treated equally as children. Skip buffering is layered on top via [`LelwelBuilder`].
+/// Abstract interface for CST tree construction.
+///
+/// Has no notion of skip/trivia tokens — all tokens arriving via [`token()`](CstBuilder::token)
+/// are treated equally as children. Skip buffering is layered on top via [`LelwelBuilder`].
 pub trait CstBuilder {
     type Token: Copy;
     type Rule;
@@ -34,6 +42,21 @@ pub trait CstBuilder {
     fn finish(self) -> Self::Output;
 }
 
+/// Wraps a [`CstBuilder`] and adds skip-token buffering.
+///
+/// # Flush policy
+///
+/// Tokens marked as "skip" are buffered and only committed to the inner builder
+/// when a non-skip token arrives ([`advance`](LelwelBuilder::advance)). This means
+/// trailing skip tokens inside a rule are excluded from the rule's child count:
+///
+/// - [`end_rule`](LelwelBuilder::end_rule) does **not** flush — trailing skips in
+///   the buffer stay uncommitted.
+/// - [`end_rule_root`](LelwelBuilder::end_rule_root) **does** flush — the root node
+///   must include all content.
+/// - All "opening" operations ([`start_rule`](LelwelBuilder::start_rule),
+///   [`mark`](LelwelBuilder::mark), [`start_rule_before`](LelwelBuilder::start_rule_before))
+///   flush, ensuring the position snapshot is accurate.
 pub struct LelwelBuilder<'s, B: CstBuilder> {
     inner: B,
     source: &'s str,
@@ -64,6 +87,8 @@ impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
         }
     }
 
+/// Advance by one token. If `skip` is true, the token is buffered.
+    /// If `skip` is false, buffered skips are flushed first, then the token is emitted.
     pub fn advance(&mut self, kind: B::Token, skip: bool, span: Range<usize>) {
         if skip {
             self.buffer.push((kind, span.start, span.end));
@@ -78,11 +103,17 @@ impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
         self.inner.start_rule()
     }
 
+/// Close a rule. Does **not** flush — trailing skip tokens in the buffer
+    /// stay uncommitted so they are excluded from this rule's child count.
     pub fn end_rule(&mut self, mark: B::Mark, rule: B::Rule) -> B::Mark {
         self.inner.end_rule(mark, rule);
         mark
     }
 
+    /// Close the root rule. **Does** flush — the root must include all content
+    /// including trailing skip tokens.
+    /// Close the root rule. **Does** flush — the root must include all content
+    /// including trailing skip tokens.
     pub fn end_rule_root(&mut self, mark: B::Mark, rule: B::Rule) -> B::Mark {
         self.flush();
         self.inner.end_rule(mark, rule);
