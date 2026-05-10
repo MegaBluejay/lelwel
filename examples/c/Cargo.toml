@@ -15,5 +15,8 @@ codespan-reporting = "0.13"
 wasm-bindgen = "0.2"
 rustc-hash = "2.1"
 
+[dev-dependencies]
+lelwel-testing = { path = "../../lelwel-testing" }
+
 [build-dependencies]
 lelwel-codegen = { path = "../../lelwel-codegen" }

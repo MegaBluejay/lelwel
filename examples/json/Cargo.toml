@@ -14,5 +14,8 @@ logos = "0.16"
 codespan-reporting = "0.13"
 wasm-bindgen = "0.2"
 
+[dev-dependencies]
+lelwel-testing = { path = "../../lelwel-testing" }
+
 [build-dependencies]
 lelwel-codegen = { path = "../../lelwel-codegen" }

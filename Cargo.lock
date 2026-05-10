@@ -431,6 +431,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "logos",
  "wasm-bindgen",
 ]
@@ -442,6 +443,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "logos",
  "rustc-hash",
  "wasm-bindgen",
@@ -487,6 +489,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "logos",
  "wasm-bindgen",
 ]
@@ -498,6 +501,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "logos",
  "wasm-bindgen",
 ]
@@ -509,6 +513,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "logos",
  "wasm-bindgen",
 ]
@@ -520,6 +525,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "logos",
  "wasm-bindgen",
 ]
@@ -532,7 +538,16 @@ dependencies = [
  "herring",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "lelwel-testing"
+version = "0.1.0"
+dependencies = [
+ "cstree",
+ "lelwel",
 ]
 
 [[package]]
@@ -543,6 +558,7 @@ dependencies = [
  "herring",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "wasm-bindgen",
 ]
 
@@ -553,6 +569,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "lelwel-codegen",
+ "lelwel-testing",
  "logos",
  "rustc-hash",
  "wasm-bindgen",

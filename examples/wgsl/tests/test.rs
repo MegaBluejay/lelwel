@@ -1,49 +1,42 @@
 use lelwel_wgsl::generate_syntax_tree;
-
-macro_rules! check {
-    ($file:literal) => {
-        let res =
-            generate_syntax_tree(&include_str!(concat!("data/", $file, ".wgsl")).replace('\r', ""));
-        assert_eq!(
-            format!("{}", res[0]),
-            include_str!(concat!("data/", $file, ".tree")).replace('\r', "")
-        );
-        assert_eq!(
-            format!("{}", res[1]),
-            include_str!(concat!("data/", $file, ".diag")).replace('\r', "")
-        );
-    };
-}
+use lelwel_testing::check;
 
 #[test]
 fn incomplete() {
-    check!("incomplete");
+    check!(generate_syntax_tree, "incomplete", "wgsl");
 }
+
 #[test]
 fn template() {
-    check!("template");
+    check!(generate_syntax_tree, "template", "wgsl");
 }
+
 #[test]
 fn incomplete_if() {
-    check!("incomplete_if");
+    check!(generate_syntax_tree, "incomplete_if", "wgsl");
 }
+
 #[test]
 fn missing_comma() {
-    check!("missing_comma");
+    check!(generate_syntax_tree, "missing_comma", "wgsl");
 }
+
 #[test]
 fn missing_arrow() {
-    check!("missing_arrow");
+    check!(generate_syntax_tree, "missing_arrow", "wgsl");
 }
+
 #[test]
 fn invalid_for() {
-    check!("invalid_for");
+    check!(generate_syntax_tree, "invalid_for", "wgsl");
 }
+
 #[test]
 fn incomplete_let() {
-    check!("incomplete_let");
+    check!(generate_syntax_tree, "incomplete_let", "wgsl");
 }
+
 #[test]
 fn missing_semicolon() {
-    check!("missing_semicolon");
+    check!(generate_syntax_tree, "missing_semicolon", "wgsl");
 }

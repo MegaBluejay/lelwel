@@ -2,6 +2,7 @@
 members = [
     "lelwel-codegen",
     "lelwel",
+    "lelwel-testing",
     "examples/c",
     "examples/calc",
     "examples/json",

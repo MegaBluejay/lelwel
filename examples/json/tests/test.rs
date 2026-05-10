@@ -1,29 +1,17 @@
 use lelwel_json::generate_syntax_tree;
-
-macro_rules! check {
-    ($file:literal) => {
-        let res =
-            generate_syntax_tree(&include_str!(concat!("data/", $file, ".json")).replace('\r', ""));
-        assert_eq!(
-            format!("{}", res[0]),
-            include_str!(concat!("data/", $file, ".tree")).replace('\r', "")
-        );
-        assert_eq!(
-            format!("{}", res[1]),
-            include_str!(concat!("data/", $file, ".diag")).replace('\r', "")
-        );
-    };
-}
+use lelwel_testing::check;
 
 #[test]
 fn incomplete() {
-    check!("incomplete");
+    check!(generate_syntax_tree, "incomplete", "json");
 }
+
 #[test]
 fn wrong_key() {
-    check!("wrong_key");
+    check!(generate_syntax_tree, "wrong_key", "json");
 }
+
 #[test]
 fn escape() {
-    check!("escape");
+    check!(generate_syntax_tree, "escape", "json");
 }

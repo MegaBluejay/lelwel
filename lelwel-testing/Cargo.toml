@@ -1,0 +1,10 @@
+[package]
+name = "lelwel-testing"
+version = "0.1.0"
+description = "Test utilities for lelwel parsers, including cstree display and cross-backend equivalence testing"
+license = "MIT OR Apache-2.0"
+edition = "2024"
+
+[dependencies]
+cstree = "0.14.0"
+lelwel = { path = "../lelwel", features = ["cstree"] }
