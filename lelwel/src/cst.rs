@@ -65,7 +65,7 @@ where
         let len = self.nodes.len() - 1;
         self.nodes[mark.0] = Node::Rule(
             rule,
-            (if mark.0 > len { 0 } else { (len - mark.0) as u16 }).into(),
+            (if mark.0 > len { 0 } else { len - mark.0 }).into(),
         );
         MarkClosed(mark.0)
     }
@@ -180,7 +180,7 @@ impl<T: TokenType, R: RuleType> CstBuilder for CstData<T, R> {
         let len = self.nodes.len();
         self.nodes[mark] = Node::Rule(
             rule,
-            (if mark >= len { 0 } else { (len - 1 - mark) as u16 }).into(),
+            (if mark >= len { 0 } else { len - 1 - mark }).into(),
         );
     }
 
