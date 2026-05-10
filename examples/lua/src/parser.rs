@@ -6,7 +6,7 @@ pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, CstData<Token, Rule>, ()> {
     type Diagnostic = Diagnostic;
     type Context = ();
 
@@ -24,15 +24,16 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
     }
 
     fn create_node_expstat(&mut self, node: NodeRef, diags: &mut Vec<Diagnostic>) {
-        self.cst.children(node).for_each(|c| {
-            if let Some(exp) = Exp::cast(&self.cst, c) {
+        let inner = self.builder.inner();
+        inner.children(node).for_each(|c| {
+            if let Some(exp) = Exp::cast(inner, c) {
                 match exp {
                     Exp::Callexp(_) => {}
                     _ => {
                         diags.push(
                             Diagnostic::error()
                                 .with_message("unexpected expression kind")
-                                .with_label(Label::primary((), self.cst.span(c)))
+                                .with_label(Label::primary((), inner.span(c)))
                                 .with_note("note: expected call expression"),
                         );
                     }
@@ -41,15 +42,16 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
         });
     }
     fn create_node_assignstat(&mut self, node: NodeRef, diags: &mut Vec<Diagnostic>) {
-        self.cst.children(node).for_each(|c| {
-            if let Some(exp) = Exp::cast(&self.cst, c) {
+        let inner = self.builder.inner();
+        inner.children(node).for_each(|c| {
+            if let Some(exp) = Exp::cast(inner, c) {
                 match exp {
                     Exp::Nameexp(_) | Exp::Indexexp(_) | Exp::Fieldexp(_) => {}
                     _ => {
                         diags.push(
                             Diagnostic::error()
                                 .with_message("unexpected expression kind")
-                                .with_label(Label::primary((), self.cst.span(c)))
+                                .with_label(Label::primary((), inner.span(c)))
                                 .with_note("note: expected name, index, or field expression"),
                         );
                     }
@@ -58,9 +60,10 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, ()> {
         });
     }
     fn create_node_attrib(&mut self, node: NodeRef, diags: &mut Vec<Diagnostic>) {
-        self.cst
+        let inner = self.builder.inner();
+        inner
             .children(node)
-            .find_map(|node| self.cst.match_token(node, Token::Name))
+            .find_map(|n| inner.match_token(n, Token::Name).map(|span| (&self.builder.source()[span.clone()], span)))
             .inspect(|(value, span)| {
                 if *value != "const" && *value != "close" {
                     diags.push(

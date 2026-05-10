@@ -36,11 +36,18 @@ impl<'a, T, R> Iterator for CstChildren<'a, T, R> {
     }
 }
 
+impl<T: Clone, R: Clone> Clone for CstData<T, R> {
+    fn clone(&self) -> Self {
+        Self { spans: self.spans.clone(), nodes: self.nodes.clone(), token_count: self.token_count, non_skip_len: self.non_skip_len }
+    }
+}
+
 #[derive(Debug)]
 pub struct CstData<T, R> {
     pub(crate) spans: Vec<Span>,
     pub nodes: Vec<Node<T, R>>,
     pub(crate) token_count: usize,
+    non_skip_len: usize,
 }
 
 #[allow(dead_code)]
@@ -48,14 +55,6 @@ impl<T, R> CstData<T, R>
 where
     R: RuleType,
 {
-    pub fn new(spans: Vec<Span>) -> Self {
-        let nodes = Vec::with_capacity(spans.len() * 2);
-        Self {
-            spans,
-            nodes,
-            token_count: 0,
-        }
-    }
     pub(crate) fn open(&mut self) -> MarkOpened {
         let mark = MarkOpened(self.nodes.len());
         self.nodes.push(Node::Rule(R::error(), 0.into()));
@@ -163,9 +162,17 @@ impl<T: TokenType, R: RuleType> CstBuilder for CstData<T, R> {
     type Checkpoint = MarkTruncation;
     type Output = CstData<T, R>;
 
-    fn new(spans: Vec<Span>) -> Self { CstData::new(spans) }
+    fn new(spans: Vec<Span>) -> Self {
+        Self { spans, nodes: Vec::new(), token_count: 0, non_skip_len: 0 }
+    }
 
     fn token(&mut self, kind: T, _text: &str) {
+        self.nodes.push(Node::Token(kind, self.token_count.into()));
+        self.token_count += 1;
+        self.non_skip_len = self.nodes.len();
+    }
+
+    fn token_skip(&mut self, kind: T, _text: &str) {
         self.nodes.push(Node::Token(kind, self.token_count.into()));
         self.token_count += 1;
     }
@@ -173,21 +180,28 @@ impl<T: TokenType, R: RuleType> CstBuilder for CstData<T, R> {
     fn start_rule(&mut self) -> usize {
         let pos = self.nodes.len();
         self.nodes.push(Node::Rule(R::error(), 0.into()));
+        self.non_skip_len = self.nodes.len();
         pos
     }
 
-    fn end_rule(&mut self, mark: usize, rule: R) {
-        let len = self.nodes.len();
+fn end_rule(&mut self, mark: usize, rule: R) {
+        let len = self.non_skip_len - 1;
         self.nodes[mark] = Node::Rule(
             rule,
-            (if mark >= len { 0 } else { len - 1 - mark }).into(),
+            (if mark >= len { 0 } else { len - mark }).into(),
         );
+    }
+
+    fn end_rule_root(&mut self, mark: usize, rule: R) {
+        self.non_skip_len = self.nodes.len();
+        self.end_rule(mark, rule);
     }
 
     fn mark(&self) -> usize { self.nodes.len() }
 
     fn start_rule_before(&mut self, mark: usize) -> usize {
         self.nodes.insert(mark, Node::Rule(R::error(), 0.into()));
+        self.non_skip_len += 1;
         mark
     }
 
@@ -198,6 +212,7 @@ impl<T: TokenType, R: RuleType> CstBuilder for CstData<T, R> {
     fn revert_to(&mut self, cp: MarkTruncation) {
         self.nodes.truncate(cp.node_count);
         self.token_count = cp.token_count;
+        self.non_skip_len = self.nodes.len();
     }
 
     fn iterate_removed(&self, checkpoint: MarkTruncation, f: &mut dyn FnMut(R, NodeRef)) {
@@ -210,7 +225,7 @@ impl<T: TokenType, R: RuleType> CstBuilder for CstData<T, R> {
 
     fn node_ref(&self, mark: usize) -> Option<NodeRef> { Some(NodeRef(mark)) }
 
-    fn finish(self) -> CstData<T, R> { self }
+fn finish(self) -> CstData<T, R> { self }
 }
 
 #[derive(Debug)]

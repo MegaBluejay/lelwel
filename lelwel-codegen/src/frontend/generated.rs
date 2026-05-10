@@ -1,5 +1,5 @@
 use lelwel::{
-    TokenType, RuleType, CstBuilder, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err,
+    TokenType, RuleType, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err,
 };
 impl TokenType for Token {
     #[inline]

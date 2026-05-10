@@ -72,7 +72,7 @@ trait ParserExt<'a>: Sized {
     fn is_followed_by_type(&self) -> bool;
 }
 
-impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
+impl<'a> ParserExt<'a> for Parser<'a, CstData<Token, Rule>, Context<'a>> {
     fn check_missing_type_specifier(
         &self,
         decl_specs: Option<DeclarationSpecifiers>,
@@ -80,11 +80,11 @@ impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
         diags: &mut Vec<Diagnostic>,
     ) {
         let has_type_specifier = decl_specs
-            .map(|decl_specs| decl_specs.has_type_specifier(&self.cst))
+            .map(|decl_specs| decl_specs.has_type_specifier(self.builder.inner()))
             .unwrap_or(false);
         if !has_type_specifier {
             let span = decl
-                .and_then(|decl| decl.name(&self.cst))
+                .and_then(|decl| decl.name(self.builder.inner(), self.builder.source()))
                 .map(|(_, span)| span)
                 .unwrap_or_else(|| self.span());
             diags.push(
@@ -98,7 +98,7 @@ impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
     }
 
     fn is_type_name(&self, pos: usize) -> bool {
-        let name = &self.cst.source()[self.context.spans[pos].clone()];
+        let name = &self.builder.source()[self.context.spans[pos].clone()];
         for scopes in self.context.scopes.iter().rev() {
             if let Some(is_type) = scopes.declared_names.get(name) {
                 return *is_type;
@@ -151,7 +151,7 @@ impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
 }
 
 #[allow(clippy::ptr_arg)]
-impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, CstData<Token, Rule>, Context<'a>> {
     type Diagnostic = Diagnostic;
     type Context = Context<'a>;
 
@@ -171,30 +171,30 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
     }
 
     fn create_node_declaration(&mut self, node: NodeRef, diags: &mut Vec<Diagnostic>) {
-        let decl = Declaration::cast(&self.cst, node).unwrap();
-        if let Some(init_decl_list) = decl.init_declarator_list(&self.cst) {
-            for init_decl in init_decl_list.init_declarators(&self.cst) {
+        let decl = Declaration::cast(self.builder.inner(), node).unwrap();
+        if let Some(init_decl_list) = decl.init_declarator_list(self.builder.inner()) {
+            for init_decl in init_decl_list.init_declarators(self.builder.inner()) {
                 self.check_missing_type_specifier(
-                    decl.declaration_specifiers(&self.cst),
-                    init_decl.declarator(&self.cst),
+                    decl.declaration_specifiers(self.builder.inner()),
+                    init_decl.declarator(self.builder.inner()),
                     diags,
                 );
             }
         }
     }
     fn create_node_function_definition(&mut self, node: NodeRef, diags: &mut Vec<Diagnostic>) {
-        let def = FunctionDefinition::cast(&self.cst, node).unwrap();
+        let def = FunctionDefinition::cast(self.builder.inner(), node).unwrap();
         self.check_missing_type_specifier(
-            def.declaration_specifiers(&self.cst),
-            def.declarator(&self.cst),
+            def.declaration_specifiers(self.builder.inner()),
+            def.declarator(self.builder.inner()),
             diags,
         );
     }
     fn create_node_declarator(&mut self, node: NodeRef, diags: &mut Vec<Diagnostic>) {
-        let decl = Declarator::cast(&self.cst, node);
+        let decl = Declarator::cast(self.builder.inner(), node);
         if let Some(decl) = decl {
             let is_type = self.context.in_typedef.last().unwrap().is_some();
-            if let Some((name, name_span)) = decl.name(&self.cst) {
+            if let Some((name, name_span)) = decl.name(self.builder.inner(), self.builder.source()) {
                 if let Some(was_type) = self
                     .context
                     .scopes
@@ -212,14 +212,14 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
                     }
                 }
             }
-            let direct_decl = decl.direct_declarator(&self.cst);
+            let direct_decl = decl.direct_declarator(self.builder.inner());
             if !matches!(direct_decl, Some(DirectDeclarator::ParenDeclarator(_))) {
                 self.context.last_seen_declarator = Some(decl);
             }
         }
     }
     fn create_node_enumerator(&mut self, node: NodeRef, diags: &mut Vec<Diagnostic>) {
-        if let Some((name, name_span)) = Enumerator::cast(&self.cst, node).unwrap().name(&self.cst)
+        if let Some((name, name_span)) = Enumerator::cast(self.builder.inner(), node).unwrap().name(self.builder.inner(), self.builder.source())
         {
             if let Some(was_type) = self
                 .context
@@ -407,9 +407,9 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
     }
     fn predicate_external_declaration_2(&self) -> bool {
         if let Some(decl) = self.context.first_declarator_in_list {
-            let direct_decl = decl.direct_declarator(&self.cst);
+            let direct_decl = decl.direct_declarator(self.builder.inner());
             if let Some(DirectDeclarator::FunctionDeclarator(func_decl)) = direct_decl {
-                func_decl.is_complete(&self.cst)
+                func_decl.is_complete(self.builder.inner())
             } else {
                 false
             }
@@ -527,7 +527,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
             if let Some((name, _name_span)) = self
                 .context
                 .first_declarator_in_list
-                .and_then(|decl| decl.name(&self.cst))
+                .and_then(|decl| decl.name(self.builder.inner(), self.builder.source()))
             {
                 diags.push(
                     Diagnostic::error()

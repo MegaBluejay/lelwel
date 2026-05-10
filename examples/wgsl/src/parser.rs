@@ -19,9 +19,9 @@ trait ParserExt<'a>: Sized {
     fn is_func_call(&self) -> bool;
 }
 
-impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
+impl<'a> ParserExt<'a> for Parser<'a, CstData<Token, Rule>, Context<'a>> {
     fn is_swizzle_name(&self) -> bool {
-        let name = self.cst.source()[self.span()].as_bytes();
+        let name = self.builder.source()[self.span()].as_bytes();
         matches!(
             name,
             [b'r' | b'g' | b'b' | b'a']
@@ -110,7 +110,7 @@ impl<'a> ParserExt<'a> for Parser<'a, Token, Rule, Context<'a>> {
     }
 }
 
-impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
+impl<'a> ParserCallbacks<'a> for Parser<'a, CstData<Token, Rule>, Context<'a>> {
     type Diagnostic = Diagnostic;
     type Context = Context<'a>;
 
@@ -225,7 +225,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a, Token, Rule, Context<'a>> {
         diags.push(
             Diagnostic::error()
                 .with_message("global let declarations are not allowed")
-                .with_label(Label::primary((), self.cst.span(node_ref))),
+                .with_label(Label::primary((), self.builder.inner().span(node_ref))),
         );
     }
 }

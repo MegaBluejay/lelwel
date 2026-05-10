@@ -26,8 +26,19 @@ pub trait CstBuilder {
 
     fn new(spans: Vec<Span>) -> Self;
     fn token(&mut self, kind: Self::Token, text: &str);
+    /// Like [`token()`](CstBuilder::token) but the caller indicates this is a skip/trivia token.
+    /// The default implementation delegates to [`token()`](CstBuilder::token).
+    /// Backends like [`CstData`] use this to exclude skip tokens from child counts.
+    fn token_skip(&mut self, kind: Self::Token, text: &str) {
+        self.token(kind, text);
+    }
     fn start_rule(&mut self) -> Self::Mark;
     fn end_rule(&mut self, mark: Self::Mark, rule: Self::Rule);
+    /// Like [`end_rule()`](CstBuilder::end_rule) but for the root node.
+    /// Some backends need different handling (all content must be included).
+    fn end_rule_root(&mut self, mark: Self::Mark, rule: Self::Rule) {
+        self.end_rule(mark, rule);
+    }
     fn mark(&self) -> Self::Mark;
     fn start_rule_before(&mut self, mark: Self::Mark) -> Self::Mark;
     fn checkpoint(&self) -> Self::Checkpoint;
@@ -67,12 +78,13 @@ impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
 
     pub fn into_inner(self) -> B { self.inner }
     pub fn source(&self) -> &'s str { self.source }
+    pub fn inner(&self) -> &B { &self.inner }
     pub fn node_ref(&self, mark: B::Mark) -> Option<NodeRef> { self.inner.node_ref(mark) }
 
-    fn flush(&mut self) {
+fn flush(&mut self) {
         for (kind, start, end) in &self.buffer[self.start_idx..] {
             let text = &self.source[*start..*end];
-            self.inner.token(*kind, text);
+            self.inner.token_skip(*kind, text);
         }
         if self.in_ordered_choice {
             self.start_idx = self.buffer.len();
@@ -105,11 +117,11 @@ impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
         mark
     }
 
-    /// Close the root rule. **Does** flush — the root must include all content
+/// Close the root rule. **Does** flush — the root must include all content
     /// including trailing skip tokens.
     pub fn end_rule_root(&mut self, mark: B::Mark, rule: B::Rule) -> B::Mark {
         self.flush();
-        self.inner.end_rule(mark, rule);
+        self.inner.end_rule_root(mark, rule);
         mark
     }
 
@@ -448,3 +460,5 @@ where
         Self::new_with_context(source, diags, Ctx::default())
     }
 }
+
+// CstData-specific parser impl block removed — examples use builder.inner() directly

@@ -1585,7 +1585,7 @@ impl RustOutput {
         let callbacks = Self::gen_parser_callbacks(sema, true, rule_names);
 
         quote! {
-                    use lelwel::{TokenType, RuleType, CstBuilder, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err};
+                    use lelwel::{TokenType, RuleType, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err};
 
                     impl TokenType for Token {
                         #[inline]
