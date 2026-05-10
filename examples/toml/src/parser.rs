@@ -9,7 +9,7 @@ trait ParserExt<'a>: Sized {
     fn lookahead(&self) -> Vec<Token>;
 }
 
-impl<'a> ParserExt<'a> for Parser<'a, CstData<Token, Rule>, ()> {
+impl<'a, B: CstBuilder<Token=Token, Rule=Rule>> ParserExt<'a> for Parser<'a, B, ()> {
     fn lookahead(&self) -> Vec<Token> {
         self.tokens[self.pos..]
             .iter()
@@ -19,7 +19,7 @@ impl<'a> ParserExt<'a> for Parser<'a, CstData<Token, Rule>, ()> {
     }
 }
 
-impl<'a> ParserCallbacks<'a> for Parser<'a, CstData<Token, Rule>, ()> {
+impl<'a, B: CstBuilder<Token=Token, Rule=Rule>> ParserCallbacks<'a> for Parser<'a, B, ()> {
     type Diagnostic = Diagnostic;
     type Context = ();
 

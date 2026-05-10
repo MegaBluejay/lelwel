@@ -6,7 +6,7 @@ pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-impl<'a> ParserCallbacks<'a> for Parser<'a, CstData<Token, Rule>, ()> {
+impl<'a, B: CstBuilder<Token=Token, Rule=Rule>> ParserCallbacks<'a> for Parser<'a, B, ()> {
     type Diagnostic = Diagnostic;
     type Context = ();
 

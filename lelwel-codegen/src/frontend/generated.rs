@@ -1,5 +1,5 @@
 use lelwel::{
-    TokenType, RuleType, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err,
+    TokenType, RuleType, CstBuilder, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err,
 };
 impl TokenType for Token {
     #[inline]
@@ -295,8 +295,9 @@ pub trait ParserCallbacks<
     ///Called when semantic predicate `?1` in rule `decl` is visited.
     fn predicate_decl_1(&self) -> bool;
 }
-impl<'a, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, CstData<Token, Rule>, Ctx>
+impl<'a, B, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, B, Ctx>
 where
+    B: CstBuilder<Token=Token, Rule=Rule>,
     Self: ParserCallbacks<'a>,
 {
     type Diag = <Self as ParserCallbacks<'a>>::Diagnostic;
@@ -1067,7 +1068,7 @@ where
     }
     #[allow(unused_assignments)]
     fn rule_postfix(&mut self, diags: &mut Vec<Self::Diagnostic>) {
-        fn rec<'b, Ctx>(
+fn rec<'b, Ctx>(
             parser: &mut Parser<'b, CstData<Token, Rule>, Ctx>,
             diags: &mut Vec<
                 <Parser<'b, CstData<Token, Rule>, Ctx> as ParserCallbacks<'b>>::Diagnostic,

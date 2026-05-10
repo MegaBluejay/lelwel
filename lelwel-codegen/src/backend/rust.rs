@@ -117,7 +117,7 @@ impl RustOutput {
     fn gen_parser(sema: &SemanticData<'_>) -> TokenStream {
         let callbacks = Self::gen_parser_callbacks(sema, false, BTreeMap::default());
         quote! {
-            use lelwel::{ParserHooks, Parser, Span, Cst, NodeRef, CstData};
+            use lelwel::{CstBuilder, ParserHooks, Parser, Span, Cst, NodeRef, CstData};
             use super::lexer::{Token, tokenize};
             use codespan_reporting::diagnostic::Label;
             pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
@@ -356,7 +356,7 @@ impl RustOutput {
             }
 
             quote! {
-                impl<'a> ParserCallbacks<'a> for Parser<'a, CstData<Token, Rule>, ()> {
+                impl<'a, B: CstBuilder<Token=Token, Rule=Rule>> ParserCallbacks<'a> for Parser<'a, B, ()> {
                     type Diagnostic = Diagnostic;
                     type Context = ();
 
@@ -1585,7 +1585,7 @@ impl RustOutput {
         let callbacks = Self::gen_parser_callbacks(sema, true, rule_names);
 
         quote! {
-                    use lelwel::{TokenType, RuleType, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err};
+                    use lelwel::{TokenType, RuleType, CstBuilder, ParserHooks, Parser, NodeRef, Cst, Span, CstData, err};
 
                     impl TokenType for Token {
                         #[inline]
@@ -1626,8 +1626,9 @@ impl RustOutput {
 
                     #callbacks
 
-                    impl<'a, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, CstData<Token, Rule>, Ctx>
+                    impl<'a, B, Ctx> ParserHooks<'a, Token, Rule> for Parser<'a, B, Ctx>
                     where
+                        B: CstBuilder<Token=Token, Rule=Rule>,
                         Self: ParserCallbacks<'a>,
                     {
                         type Diag = <Self as ParserCallbacks<'a>>::Diagnostic;
