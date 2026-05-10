@@ -1,4 +1,5 @@
 use core::fmt::Debug;
+use core::ops::Range;
 
 use crate::cst::*;
 use crate::types::*;
@@ -11,6 +12,111 @@ pub trait TokenType: Copy + Clone + PartialEq + Eq + Debug + 'static {
 
 pub trait RuleType: Copy + Clone + PartialEq + Eq + Debug + 'static {
     fn error() -> Self;
+}
+
+pub trait CstBuilder {
+    type Token: Copy;
+    type Rule;
+    type Mark: Copy;
+    type Checkpoint: Copy;
+    type Output;
+
+    fn new(spans: Vec<Span>) -> Self;
+    fn token(&mut self, kind: Self::Token, text: &str);
+    fn start_rule(&mut self) -> Self::Mark;
+    fn end_rule(&mut self, mark: Self::Mark, rule: Self::Rule);
+    fn mark(&self) -> Self::Mark;
+    fn start_rule_before(&mut self, mark: Self::Mark) -> Self::Mark;
+    fn checkpoint(&self) -> Self::Checkpoint;
+    fn revert_to(&mut self, checkpoint: Self::Checkpoint);
+    fn iterate_removed(&self, _checkpoint: Self::Checkpoint, _f: &mut dyn FnMut(Self::Rule, NodeRef)) {}
+    fn node_ref(&self, _mark: Self::Mark) -> Option<NodeRef> { None }
+    fn finish(self) -> Self::Output;
+}
+
+pub struct LelwelBuilder<'s, B: CstBuilder> {
+    inner: B,
+    source: &'s str,
+    buffer: Vec<(B::Token, usize, usize)>,
+    start_idx: usize,
+    pub in_ordered_choice: bool,
+}
+
+impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
+    pub fn new(inner: B, source: &'s str) -> Self {
+        LelwelBuilder { inner, source, buffer: Vec::new(), start_idx: 0, in_ordered_choice: false }
+    }
+
+    pub fn into_inner(self) -> B { self.inner }
+    pub fn source(&self) -> &'s str { self.source }
+    pub fn node_ref(&self, mark: B::Mark) -> Option<NodeRef> { self.inner.node_ref(mark) }
+
+    fn flush(&mut self) {
+        for (kind, start, end) in &self.buffer[self.start_idx..] {
+            let text = &self.source[*start..*end];
+            self.inner.token(*kind, text);
+        }
+        if self.in_ordered_choice {
+            self.start_idx = self.buffer.len();
+        } else {
+            self.buffer.clear();
+            self.start_idx = 0;
+        }
+    }
+
+    pub fn advance(&mut self, kind: B::Token, skip: bool, span: Range<usize>) {
+        if skip {
+            self.buffer.push((kind, span.start, span.end));
+        } else {
+            self.flush();
+            self.inner.token(kind, &self.source[span]);
+        }
+    }
+
+    pub fn start_rule(&mut self) -> B::Mark {
+        self.flush();
+        self.inner.start_rule()
+    }
+
+    pub fn end_rule(&mut self, mark: B::Mark, rule: B::Rule) -> B::Mark {
+        self.inner.end_rule(mark, rule);
+        mark
+    }
+
+    pub fn end_rule_root(&mut self, mark: B::Mark, rule: B::Rule) -> B::Mark {
+        self.flush();
+        self.inner.end_rule(mark, rule);
+        mark
+    }
+
+    pub fn mark(&mut self) -> B::Mark {
+        self.flush();
+        self.inner.mark()
+    }
+
+    pub fn start_rule_before(&mut self, mark: B::Mark) -> B::Mark {
+        self.flush();
+        self.inner.start_rule_before(mark)
+    }
+
+    pub fn state(&self) -> (B::Checkpoint, usize, usize) {
+        (self.inner.checkpoint(), self.start_idx, self.buffer.len())
+    }
+
+    pub fn restore(
+        &mut self,
+        checkpoint: B::Checkpoint,
+        start_idx: usize,
+        buffer_len: usize,
+        on_delete: &mut dyn FnMut(B::Rule, NodeRef),
+    ) {
+        self.inner.iterate_removed(checkpoint, on_delete);
+        self.inner.revert_to(checkpoint);
+        self.buffer.truncate(buffer_len);
+        self.start_idx = start_idx;
+    }
+
+    pub fn finish(self) -> B::Output { self.inner.finish() }
 }
 
 pub trait ParserHooks<'a, T: TokenType, R: RuleType> {
