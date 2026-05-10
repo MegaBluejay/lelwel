@@ -1,7 +1,6 @@
 use core::fmt::Debug;
 use core::ops::Range;
 
-use crate::cst::*;
 use crate::types::*;
 
 pub trait TokenType: Copy + Clone + PartialEq + Eq + Debug + 'static {
@@ -14,10 +13,6 @@ pub trait RuleType: Copy + Clone + PartialEq + Eq + Debug + 'static {
     fn error() -> Self;
 }
 
-/// Abstract interface for CST tree construction.
-///
-/// Has no notion of skip/trivia tokens — all tokens arriving via [`token()`](CstBuilder::token)
-/// are treated equally as children. Skip buffering is layered on top via [`LelwelBuilder`].
 /// Abstract interface for CST tree construction.
 ///
 /// Has no notion of skip/trivia tokens — all tokens arriving via [`token()`](CstBuilder::token)
@@ -87,7 +82,7 @@ impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
         }
     }
 
-/// Advance by one token. If `skip` is true, the token is buffered.
+    /// Advance by one token. If `skip` is true, the token is buffered.
     /// If `skip` is false, buffered skips are flushed first, then the token is emitted.
     pub fn advance(&mut self, kind: B::Token, skip: bool, span: Range<usize>) {
         if skip {
@@ -103,15 +98,13 @@ impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
         self.inner.start_rule()
     }
 
-/// Close a rule. Does **not** flush — trailing skip tokens in the buffer
+    /// Close a rule. Does **not** flush — trailing skip tokens in the buffer
     /// stay uncommitted so they are excluded from this rule's child count.
     pub fn end_rule(&mut self, mark: B::Mark, rule: B::Rule) -> B::Mark {
         self.inner.end_rule(mark, rule);
         mark
     }
 
-    /// Close the root rule. **Does** flush — the root must include all content
-    /// including trailing skip tokens.
     /// Close the root rule. **Does** flush — the root must include all content
     /// including trailing skip tokens.
     pub fn end_rule_root(&mut self, mark: B::Mark, rule: B::Rule) -> B::Mark {
@@ -134,14 +127,18 @@ impl<'s, B: CstBuilder> LelwelBuilder<'s, B> {
         (self.inner.checkpoint(), self.start_idx, self.buffer.len())
     }
 
+    pub fn collect_removed(&self, checkpoint: B::Checkpoint) -> Vec<(B::Rule, NodeRef)> {
+        let mut result = Vec::new();
+        self.inner.iterate_removed(checkpoint, &mut |rule, nr| result.push((rule, nr)));
+        result
+    }
+
     pub fn restore(
         &mut self,
         checkpoint: B::Checkpoint,
         start_idx: usize,
         buffer_len: usize,
-        on_delete: &mut dyn FnMut(B::Rule, NodeRef),
     ) {
-        self.inner.iterate_removed(checkpoint, on_delete);
         self.inner.revert_to(checkpoint);
         self.buffer.truncate(buffer_len);
         self.start_idx = start_idx;
@@ -168,25 +165,26 @@ pub trait ParserHooks<'a, T: TokenType, R: RuleType> {
     fn delete_node(&mut self, _rule: R, _node_ref: NodeRef) {}
 }
 
-pub struct ParserState<T> {
+pub struct ParserState<B: CstBuilder> {
     pos: usize,
-    current: T,
-    truncation_mark: MarkTruncation,
+    current: B::Token,
+    checkpoint: B::Checkpoint,
+    start_idx: usize,
+    buffer_len: usize,
     diag_count: usize,
 }
 
-pub struct Parser<'a, T: TokenType, R: RuleType, Ctx> {
-    pub cst: Cst<'a, T, R>,
-    pub tokens: Vec<T>,
+pub struct Parser<'a, B: CstBuilder, Ctx> {
+    pub builder: LelwelBuilder<'a, B>,
+    pub tokens: Vec<B::Token>,
     pub pos: usize,
-    pub current: T,
-    pub end_of_input: T,
+    pub current: B::Token,
+    pub end_of_input: B::Token,
     pub max_offset: usize,
     pub context: Ctx,
-    pub(crate) error_node: Option<MarkOpened>,
-    #[allow(dead_code)]
-    pub in_ordered_choice: bool,
+    pub(crate) error_node: Option<B::Mark>,
     pub error_since_advance: bool,
+    spans: Vec<Span>,
 }
 
 #[macro_export]
@@ -200,23 +198,25 @@ pub trait ParserArgs {
     type Diag;
 }
 
-impl<'a, T, R, Ctx> ParserArgs for Parser<'a, T, R, Ctx>
+impl<'a, B, Ctx> ParserArgs for Parser<'a, B, Ctx>
 where
-    T: TokenType,
-    R: RuleType,
-    Self: ParserHooks<'a, T, R>,
+    B: CstBuilder,
+    B::Token: TokenType,
+    B::Rule: RuleType,
+    Self: ParserHooks<'a, B::Token, B::Rule>,
 {
-    type Diag = <Self as ParserHooks<'a, T, R>>::Diag;
+    type Diag = <Self as ParserHooks<'a, B::Token, B::Rule>>::Diag;
 }
 
 type Diag<P> = <P as ParserArgs>::Diag;
 
 #[allow(clippy::while_let_loop, dead_code, unused_parens)]
-impl<'a, T, R, Ctx> Parser<'a, T, R, Ctx>
+impl<'a, B, Ctx> Parser<'a, B, Ctx>
 where
-    T: TokenType,
-    R: RuleType,
-    Self: ParserHooks<'a, T, R>,
+    B: CstBuilder,
+    B::Token: TokenType,
+    B::Rule: RuleType,
+    Self: ParserHooks<'a, B::Token, B::Rule>,
 {
     pub fn active_error(&self) -> bool {
         self.error_node.is_some() || self.error_since_advance
@@ -229,17 +229,20 @@ where
         self.error_since_advance = true;
         diags.push(diag);
     }
+
     pub fn advance(&mut self, error: bool, diags: &mut Vec<Diag<Self>>) {
         if !error {
             self.close_error_node(diags);
             self.error_since_advance = false;
         }
-        self.cst.data.advance(self.current, false);
+        let span = self.spans.get(self.pos).cloned().unwrap_or(self.max_offset..self.max_offset);
+        self.builder.advance(self.current, false, span);
         loop {
             self.pos += 1;
             match self.tokens.get(self.pos) {
                 Some(token) if token.is_skip() || self.predicate_skip_hook(*token) => {
-                    self.cst.data.advance(*token, true);
+                    let span = self.spans.get(self.pos).cloned().unwrap_or(self.max_offset..self.max_offset);
+                    self.builder.advance(*token, true, span);
                     continue;
                 }
                 Some(token) => {
@@ -253,12 +256,14 @@ where
             }
         }
     }
+
     fn init_skip(&mut self) {
         loop {
             match self.tokens.get(self.pos) {
                 Some(token) if token.is_skip() || self.predicate_skip_hook(*token) => {
+                    let span = self.spans.get(self.pos).cloned().unwrap_or(self.max_offset..self.max_offset);
+                    self.builder.advance(*token, true, span);
                     self.pos += 1;
-                    self.cst.data.advance(*token, true);
                     continue;
                 }
                 Some(token) => {
@@ -272,14 +277,16 @@ where
             }
         }
     }
+
     pub fn advance_with_error(&mut self, diags: &mut Vec<Diag<Self>>, diag: Diag<Self>) {
         self.error(diags, diag);
         if self.error_node.is_none() {
-            self.error_node = Some(self.cst.data.open());
+            self.error_node = Some(self.builder.start_rule());
         }
         self.advance(true, diags);
     }
-    pub fn peek(&self, lookahead: usize) -> T {
+
+    pub fn peek(&self, lookahead: usize) -> B::Token {
         self.tokens
             .iter()
             .skip(self.pos)
@@ -287,7 +294,8 @@ where
             .nth(lookahead)
             .map_or(self.end_of_input, |it| *it)
     }
-    pub fn peek_left(&self, lookbehind: usize) -> T {
+
+    pub fn peek_left(&self, lookbehind: usize) -> B::Token {
         self.tokens
             .iter()
             .take(self.pos + 1)
@@ -296,72 +304,85 @@ where
             .nth(lookbehind)
             .map_or(self.end_of_input, |it| *it)
     }
+
     pub fn close_error_node(&mut self, diags: &mut Vec<Diag<Self>>) {
         if let Some(error_node) = self.error_node {
-            self.cst.data.close(error_node, R::error());
-            self.create_node_error_hook(NodeRef(error_node.0), diags);
+            self.builder.end_rule(error_node, B::Rule::error());
+            if let Some(nr) = self.builder.node_ref(error_node) {
+                self.create_node_error_hook(nr, diags);
+            }
             self.error_node = None;
         }
     }
-    pub fn open(&mut self, diags: &mut Vec<Diag<Self>>) -> MarkOpened {
+
+    pub fn open(&mut self, diags: &mut Vec<Diag<Self>>) -> B::Mark {
         self.close_error_node(diags);
-        self.cst.data.open()
+        self.builder.start_rule()
     }
-    pub fn open_before(&mut self, mark: MarkClosed, diags: &mut Vec<Diag<Self>>) -> MarkOpened {
+
+    pub fn open_before(&mut self, mark: B::Mark, diags: &mut Vec<Diag<Self>>) -> B::Mark {
         self.close_error_node(diags);
-        self.cst.data.open_before(mark)
+        self.builder.start_rule_before(mark)
     }
-    pub fn close(&mut self, mark: MarkOpened, rule: R, diags: &mut Vec<Diag<Self>>) -> MarkClosed {
+
+    pub fn close(&mut self, mark: B::Mark, rule: B::Rule, diags: &mut Vec<Diag<Self>>) -> B::Mark {
         self.close_error_node(diags);
-        self.cst.data.close(mark, rule)
+        let closed = self.builder.end_rule(mark, rule);
+        if let Some(nr) = self.builder.node_ref(closed) {
+            self.create_node(rule, nr, diags);
+        }
+        closed
     }
-    pub fn close_root(
-        &mut self,
-        mark: MarkOpened,
-        rule: R,
-        diags: &mut Vec<Diag<Self>>,
-    ) -> MarkClosed {
+
+    pub fn close_root(&mut self, mark: B::Mark, rule: B::Rule, diags: &mut Vec<Diag<Self>>) -> B::Mark {
         self.close_error_node(diags);
-        self.cst.data.close_root(mark, rule)
+        let closed = self.builder.end_rule_root(mark, rule);
+        if let Some(nr) = self.builder.node_ref(closed) {
+            self.create_node(rule, nr, diags);
+        }
+        closed
     }
-    pub fn mark(&mut self, diags: &mut Vec<Diag<Self>>) -> MarkClosed {
+
+    pub fn mark(&mut self, diags: &mut Vec<Diag<Self>>) -> B::Mark {
         self.close_error_node(diags);
-        self.cst.data.mark()
+        self.builder.mark()
     }
+
     pub fn span(&self) -> Span {
-        self.cst
-            .data
-            .spans
-            .get(self.pos)
-            .map_or(self.max_offset..self.max_offset, |span| span.clone())
+        self.spans.get(self.pos).cloned().unwrap_or(self.max_offset..self.max_offset)
     }
-    pub fn get_state(&self, diags: &[Diag<Self>]) -> ParserState<T> {
+
+    pub fn get_state(&self, diags: &[Diag<Self>]) -> ParserState<B> {
+        let (checkpoint, start_idx, buffer_len) = self.builder.state();
         ParserState {
             pos: self.pos,
             current: self.current,
-            truncation_mark: self.cst.data.mark_truncation(),
+            checkpoint,
+            start_idx,
+            buffer_len,
             diag_count: diags.len(),
         }
     }
-    pub fn set_state(&mut self, state: &ParserState<T>, diags: &mut Vec<Diag<Self>>) {
+
+    pub fn set_state(&mut self, state: &ParserState<B>, diags: &mut Vec<Diag<Self>>) {
         self.pos = state.pos;
         self.current = state.current;
         diags.truncate(state.diag_count);
-        for i in state.truncation_mark.node_count..self.cst.data.nodes.len() {
-            if let Node::Rule(rule, _) = self.cst.data.nodes[i] {
-                self.delete_node(rule, NodeRef(i));
-            }
+        let removed = self.builder.collect_removed(state.checkpoint);
+        for (rule, node_ref) in removed {
+            self.delete_node(rule, node_ref);
         }
-        self.cst.data.truncate(state.truncation_mark.clone());
+        self.builder.restore(state.checkpoint, state.start_idx, state.buffer_len);
     }
+
     pub fn parse_with(
         mut self,
         start_rule: impl FnOnce(&mut Self, &mut Vec<Diag<Self>>),
         diags: &mut Vec<Diag<Self>>,
-        root: R,
-    ) -> Cst<'a, T, R> {
+        root: B::Rule,
+    ) -> B::Output {
         let token_count = self.tokens.len();
-        let m = self.open(diags);
+        let m = self.builder.start_rule();
         self.init_skip();
 
         start_rule(&mut self, diags);
@@ -369,50 +390,56 @@ where
         self.close_error_node(diags);
         if self.pos != token_count {
             self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
-            let error_tree = self.open(diags);
+            let error_tree = self.builder.start_rule();
             while self.pos < token_count {
                 let token = self.tokens[self.pos];
-                self.cst.data.advance(token, token.is_skip());
+                let span = self.spans[self.pos].clone();
+                self.builder.advance(token, token.is_skip(), span);
                 self.pos += 1;
             }
-            self.cst.data.close(error_tree, R::error());
-            self.create_node_error_hook(NodeRef(error_tree.0), diags);
+            self.builder.end_rule(error_tree, B::Rule::error());
+            if let Some(nr) = self.builder.node_ref(error_tree) {
+                self.create_node_error_hook(nr, diags);
+            }
         }
 
-        let closed = self.cst.data.close_root(m, root);
-        self.create_node(root, NodeRef(closed.0), diags);
-        self.cst
+        let closed = self.builder.end_rule_root(m, root);
+        if let Some(nr) = self.builder.node_ref(closed) {
+            self.create_node(root, nr, diags);
+        }
+        self.builder.finish()
     }
 }
 
-impl<'a, T, R, Ctx> Parser<'a, T, R, Ctx>
+impl<'a, B, Ctx> Parser<'a, B, Ctx>
 where
-    T: TokenType,
-    R: RuleType,
-    Self: ParserHooks<'a, T, R>,
-    Ctx: From<<Self as ParserHooks<'a, T, R>>::Ctx>,
-    <Self as ParserHooks<'a, T, R>>::Ctx: From<Ctx>,
+    B: CstBuilder,
+    B::Token: TokenType,
+    B::Rule: RuleType,
+    Self: ParserHooks<'a, B::Token, B::Rule>,
+    Ctx: From<<Self as ParserHooks<'a, B::Token, B::Rule>>::Ctx>,
+    <Self as ParserHooks<'a, B::Token, B::Rule>>::Ctx: From<Ctx>,
 {
     pub fn new_with_context(source: &'a str, diags: &mut Vec<Diag<Self>>, context: Ctx) -> Self {
-        let mut ctx = <Self as ParserHooks<'a, T, R>>::Ctx::from(context);
+        let mut ctx = <Self as ParserHooks<'a, B::Token, B::Rule>>::Ctx::from(context);
         let (tokens, spans) = Self::create_tokens_hook(&mut ctx, source, diags);
         let max_offset = source.len();
+        let inner = B::new(spans.clone());
+        let builder = LelwelBuilder::new(inner, source);
         Self {
-            current: T::eof(),
-            end_of_input: T::eof(),
-            cst: Cst {
-                data: CstData::new(spans),
-                source,
-            },
+            current: B::Token::eof(),
+            end_of_input: B::Token::eof(),
+            builder,
             tokens,
+            spans,
             pos: 0,
             max_offset,
             context: Ctx::from(ctx),
             error_node: None,
-            in_ordered_choice: false,
             error_since_advance: false,
         }
     }
+
     pub fn new(source: &'a str, diags: &mut Vec<Diag<Self>>) -> Self
     where
         Ctx: Default,
