@@ -186,7 +186,7 @@ impl RustOutput {
             \n    }\n"
         })?;
         if is_trait {
-            for (rule_name, _) in rule_names.iter() {
+            for rule_name in rule_names.keys() {
                 output.write_all(
                     format!(
                         "    /// Called when `{rule_name}` node is created.\

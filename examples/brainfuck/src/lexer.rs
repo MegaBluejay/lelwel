@@ -57,14 +57,12 @@ pub fn tokenize(source: &str, diags: &mut Vec<Diagnostic>) -> (Vec<Token>, Vec<S
             Ok(token) => {
                 match token {
                     Token::LBrack => stack.push(span.clone()),
-                    Token::RBrack => {
-                        if stack.pop().is_none() {
-                            diags.push(
-                                Diagnostic::error()
-                                    .with_message("unmatched closing bracket ']'")
-                                    .with_label(Label::primary((), span.clone())),
-                            );
-                        }
+                    Token::RBrack if stack.pop().is_none() => {
+                        diags.push(
+                            Diagnostic::error()
+                                .with_message("unmatched closing bracket ']'")
+                                .with_label(Label::primary((), span.clone())),
+                        );
                     }
                     _ => {}
                 }
