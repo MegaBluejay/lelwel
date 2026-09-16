@@ -95,7 +95,7 @@ impl Parser<'_> {
     }
 
     fn is_followed_by_type(&self) -> bool {
-        let lookahead = self.peek(1);
+        let lookahead = self.tokens[self.pos + 1];
         if matches!(
             lookahead,
             Token::Alignas
@@ -147,6 +147,7 @@ impl Parser<'_> {
 impl<'a> ParserCallbacks<'a> for Parser<'a> {
     type Diagnostic = Diagnostic;
     type Context = Context<'a>;
+    type State = ();
 
     fn create_tokens(
         _context: &mut Self::Context,
@@ -276,7 +277,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
     fn predicate_declaration_specifiers_2(&self) -> bool {
         if self.current == Token::Atomic {
-            self.peek(1) == Token::LPar
+            self.tokens[self.pos + 1] == Token::LPar
         } else {
             true
         }
@@ -287,14 +288,14 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
     fn predicate_specifier_qualifier_list_2(&self) -> bool {
         if self.current == Token::Atomic {
-            self.peek(1) == Token::LPar
+            self.tokens[self.pos + 1] == Token::LPar
         } else {
             true
         }
     }
     fn predicate_enumerator_list_1(&self) -> bool {
         // use extra lookahead
-        self.peek(1) != Token::RBrace
+        self.tokens[self.pos + 1] != Token::RBrace
     }
     fn predicate_alignment_specifier_1(&self) -> bool {
         self.current != Token::Identifier || self.is_type_name(self.pos)
@@ -302,15 +303,16 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     fn predicate_direct_declarator_1(&self) -> bool {
         // use extra lookahead
         !self.is_type_name(self.pos)
-            && (self.peek(1) == Token::Comma || self.peek(1) == Token::RPar)
+            && (self.tokens[self.pos + 1] == Token::Comma
+                || self.tokens[self.pos + 1] == Token::RPar)
     }
     fn predicate_direct_declarator_2(&self) -> bool {
         // use extra lookahead
-        self.peek(1) == Token::RBrak
+        self.tokens[self.pos + 1] == Token::RBrak
     }
     fn predicate_parameter_list_1(&self) -> bool {
         // use extra lookahead
-        self.peek(1) != Token::RPar && self.peek(1) != Token::Ellipsis
+        self.tokens[self.pos + 1] != Token::RPar && self.tokens[self.pos + 1] != Token::Ellipsis
     }
     fn predicate_parameter_declaration_1(&self) -> bool {
         // check if the parameter declaration has a direct or abstract declarator
@@ -353,23 +355,25 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
     fn predicate_direct_abstract_declarator_1(&self) -> bool {
         // use extra lookahead
-        self.peek(1) == Token::RBrak
+        self.tokens[self.pos + 1] == Token::RBrak
     }
     fn predicate_initializer_list_1(&self) -> bool {
         // use extra lookahead
-        self.peek(1) != Token::RBrace
+        self.tokens[self.pos + 1] != Token::RBrace
     }
     fn predicate_statement_1(&self) -> bool {
         // use extra lookahead
-        self.current != Token::Identifier || self.peek(1) == Token::Colon
+        self.current != Token::Identifier || self.tokens[self.pos + 1] == Token::Colon
     }
     fn predicate_block_item_1(&self) -> bool {
         match self.current {
-            Token::Identifier => self.is_type_name(self.pos) && self.peek(1) != Token::Colon,
+            Token::Identifier => {
+                self.is_type_name(self.pos) && self.tokens[self.pos + 1] != Token::Colon
+            }
             Token::Extension => {
                 self.is_followed_by_type()
                     || matches!(
-                        self.peek(1),
+                        self.tokens[self.pos + 1],
                         Token::Auto
                             | Token::AutoType
                             | Token::Extern
@@ -407,7 +411,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
     fn predicate_attrib_1(&self) -> bool {
         // use extra lookahead
-        self.peek(1) == Token::Comma || self.peek(1) == Token::RPar
+        self.tokens[self.pos + 1] == Token::Comma || self.tokens[self.pos + 1] == Token::RPar
     }
     fn predicate_typeof_specifier_1(&self) -> bool {
         self.current != Token::Identifier || self.is_type_name(self.pos)

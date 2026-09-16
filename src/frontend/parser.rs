@@ -8,6 +8,7 @@ include!("./generated.rs");
 impl<'a> ParserCallbacks<'a> for Parser<'a> {
     type Diagnostic = Diagnostic;
     type Context = ();
+    type State = ();
 
     fn create_tokens(
         _context: &mut Self::Context,
@@ -22,7 +23,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
             .with_label(Label::primary((), span))
     }
     fn predicate_decl_1(&self) -> bool {
-        let peek = self.peek(1);
-        peek == Token::Colon || (peek == Token::Hat && self.peek(2) == Token::Colon)
+        let peek = self.tokens[self.pos + 1];
+        peek == Token::Colon || (peek == Token::Hat && self.tokens[self.pos + 2] == Token::Colon)
     }
 }

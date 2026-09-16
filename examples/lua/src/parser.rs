@@ -9,6 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 impl<'a> ParserCallbacks<'a> for Parser<'a> {
     type Diagnostic = Diagnostic;
     type Context = ();
+    type State = ();
 
     fn create_tokens(
         _context: &mut Self::Context,
@@ -74,15 +75,15 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
 
     fn predicate_forstat_1(&self) -> bool {
-        self.peek(1) == Token::Equal
+        self.tokens[self.pos + 1] == Token::Equal
     }
     fn predicate_pars_1(&self) -> bool {
-        self.peek(1) != Token::Ellipsis
+        self.tokens[self.pos + 1] != Token::Ellipsis
     }
     fn predicate_fieldlist_1(&self) -> bool {
-        self.peek(1) != Token::RBrace
+        self.tokens[self.pos + 1] != Token::RBrace
     }
     fn predicate_field_1(&self) -> bool {
-        self.peek(1) == Token::Equal
+        self.tokens[self.pos + 1] == Token::Equal
     }
 }

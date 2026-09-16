@@ -8,6 +8,7 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 impl<'a> ParserCallbacks<'a> for Parser<'a> {
     type Diagnostic = Diagnostic;
     type Context = ();
+    type State = ();
 
     fn create_tokens(
         _context: &mut Self::Context,
@@ -22,38 +23,47 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
             .with_label(Label::primary((), span))
     }
     fn predicate_varargslist_1(&self) -> bool {
-        matches!(self.peek(1), Token::LPar | Token::Name)
+        matches!(self.tokens[self.pos + 1], Token::LPar | Token::Name)
     }
     fn predicate_fplist_1(&self) -> bool {
-        self.peek(1) != Token::RPar
+        self.tokens[self.pos + 1] != Token::RPar
     }
     fn predicate_simple_stmts_1(&self) -> bool {
-        self.peek(1) != Token::Newline
+        self.tokens[self.pos + 1] != Token::Newline
     }
     fn predicate_print_stmt_1(&self) -> bool {
-        !matches!(self.peek(1), Token::Newline | Token::Semi)
+        !matches!(self.tokens[self.pos + 1], Token::Newline | Token::Semi)
     }
     fn predicate_import_as_names_1(&self) -> bool {
-        !matches!(self.peek(1), Token::Newline | Token::Semi | Token::RPar)
+        !matches!(
+            self.tokens[self.pos + 1],
+            Token::Newline | Token::Semi | Token::RPar
+        )
     }
     fn predicate_testlist_safe_1(&self) -> bool {
-        !matches!(self.peek(1), Token::For | Token::If | Token::RBrak)
+        !matches!(
+            self.tokens[self.pos + 1],
+            Token::For | Token::If | Token::RBrak
+        )
     }
     fn predicate_listmaker_1(&self) -> bool {
-        self.peek(1) != Token::RBrak
+        self.tokens[self.pos + 1] != Token::RBrak
     }
     fn predicate_testlist_comp_1(&self) -> bool {
-        self.peek(1) != Token::RPar
+        self.tokens[self.pos + 1] != Token::RPar
     }
     fn predicate_subscriptlist_1(&self) -> bool {
-        self.peek(1) != Token::RBrak
+        self.tokens[self.pos + 1] != Token::RBrak
     }
     fn predicate_exprlist_1(&self) -> bool {
-        !matches!(self.peek(1), Token::In | Token::Newline | Token::Semi)
+        !matches!(
+            self.tokens[self.pos + 1],
+            Token::In | Token::Newline | Token::Semi
+        )
     }
     fn predicate_testlist_1(&self) -> bool {
         matches!(
-            self.peek(1),
+            self.tokens[self.pos + 1],
             Token::BTick
                 | Token::LBrace
                 | Token::LBrak
@@ -71,12 +81,15 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         )
     }
     fn predicate_dictorsetmaker_1(&self) -> bool {
-        self.peek(1) != Token::RBrace
+        self.tokens[self.pos + 1] != Token::RBrace
     }
     fn predicate_arglist_1(&self) -> bool {
-        !matches!(self.peek(1), Token::RPar | Token::Star | Token::Star2)
+        !matches!(
+            self.tokens[self.pos + 1],
+            Token::RPar | Token::Star | Token::Star2
+        )
     }
     fn predicate_arglist_2(&self) -> bool {
-        !matches!(self.peek(1), Token::RPar | Token::Star2)
+        !matches!(self.tokens[self.pos + 1], Token::RPar | Token::Star2)
     }
 }

@@ -162,9 +162,13 @@ impl RustOutput {
             \npub trait ParserCallbacks<'a> {\
             \n    type Diagnostic;\
             \n    type Context;\
+            \n    type State: Clone;
             \n\
             \n    /// Called at the start of the parse to generate all tokens and corresponding spans.\
             \n    fn create_tokens(context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>);\
+            \n    fn lex(&mut self, _diags: &mut Vec<Self::Diagnostic>) -> Option<(Token, Span)> {\
+            \n        None\
+            \n    }\
             \n    /// Called when diagnostic is created.\
             \n    fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;\
             \n    /// This predicate can be used to skip normal tokens.\
@@ -175,6 +179,7 @@ impl RustOutput {
             b"impl<'a> ParserCallbacks<'a> for Parser<'a> {\
             \n    type Diagnostic = Diagnostic;\
             \n    type Context = (); // TODO: add context information to the parser if required\
+            \n    type State = ();
             \n\
             \n    fn create_tokens(_context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>) {\
             \n        tokenize(source, diags)\

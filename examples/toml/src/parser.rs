@@ -17,6 +17,7 @@ impl Parser<'_> {
 impl<'a> ParserCallbacks<'a> for Parser<'a> {
     type Diagnostic = Diagnostic;
     type Context = ();
+    type State = ();
 
     fn create_tokens(
         _context: &mut Self::Context,

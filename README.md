@@ -374,7 +374,7 @@ The commit operator `~` commits a parse to a choice, so in case of a failure the
 > ```antlr
 > token Id Num Eq='=' Semi=';' LPar='(' RPar=')';
 > start stmt;
-> 
+>
 > stmt^:
 >   decl_stmt
 > / expr_stmt
@@ -443,7 +443,7 @@ The index of actions, predicates, and assertions can be used multiple times in a
 > **Example**
 > ```antlr
 > token A B C D;
-> 
+>
 > foo:
 >   ?1 A #1 (?2 B C)* B #2
 > | A !1 C #2
@@ -454,7 +454,7 @@ The index of actions, predicates, and assertions can be used multiple times in a
 > impl ParserCallbacks for Parser<'_> {
 >     // ...
 >     fn predicate_foo_1(&self) -> bool {
->         self.peek(1) == Token::B
+>         self.tokens[self.pos + 1] == Token::B
 >     }
 >     fn predicate_foo_2(&self) -> bool {
 >         self.context.some_condition

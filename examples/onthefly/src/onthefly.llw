@@ -1,0 +1,24 @@
+token Id='<id>' Num='<num>';
+token Plus='+' Eq='=' Semi=';';
+token Whitespace;
+
+skip Whitespace;
+
+start prog;
+
+prog: stmt*;
+
+// Ordered choice: all three branches predict the same first token (Id), so a
+// failed branch must backtrack and re-lex the same input for the next branch.
+stmt^:
+  decl
+/ op_stmt
+/ expr_stmt
+;
+
+// `x = y;`
+decl: Id Eq Id Semi;
+// `x = 1;`
+op_stmt: Id Eq Num Semi;
+// `x;` or `x + 1;`
+expr_stmt: Id [Plus Num] Semi;

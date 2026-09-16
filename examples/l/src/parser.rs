@@ -8,6 +8,7 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 impl<'a> ParserCallbacks<'a> for Parser<'a> {
     type Diagnostic = Diagnostic;
     type Context = ();
+    type State = ();
 
     fn create_tokens(
         _context: &mut Self::Context,
@@ -22,9 +23,9 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
             .with_label(Label::primary((), span))
     }
     fn predicate_param_list_1(&self) -> bool {
-        self.peek(1) != Token::RPar
+        self.tokens[self.pos + 1] != Token::RPar
     }
     fn predicate_arg_list_1(&self) -> bool {
-        self.peek(1) != Token::RPar
+        self.tokens[self.pos + 1] != Token::RPar
     }
 }

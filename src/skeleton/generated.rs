@@ -364,11 +364,13 @@ macro_rules! try_expect {{
     }};
 }}
 
-struct ParserState {{
+struct ParserState<S> {{
     pos: usize,
     current: Token,
     truncation_mark: MarkTruncation,
     diag_count: usize,
+    state: S,
+    lexed: usize,
 }}
 pub struct Parser<'a> {{
     cst: Cst<'a>,
@@ -383,6 +385,7 @@ pub struct Parser<'a> {{
     #[allow(dead_code)]
     in_ordered_choice: bool,
     error_since_advance: bool,
+    state: <Self as ParserCallbacks<'a>>::State,
 }}
 #[allow(clippy::while_let_loop, dead_code, unused_parens)]
 impl<'a> Parser<'a> {{
@@ -400,6 +403,18 @@ impl<'a> Parser<'a> {{
         self.error_since_advance = true;
         diags.push(diag);
     }}
+    fn token(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
+        if self.pos < self.tokens.len() {{
+            return Some(self.tokens[self.pos])
+        }}
+
+        let (token, span) = self.lex(diags)?;
+
+        self.tokens.push(token);
+        self.cst.data.spans.push(span);
+
+        Some(token)
+    }}
     fn advance(&mut self, error: bool, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {{
         if !error {{
             self.close_error_node(diags);
@@ -408,17 +423,17 @@ impl<'a> Parser<'a> {{
         self.cst.data.advance(self.current, false);
         loop {{
             self.pos += 1;
-            match self.tokens.get(self.pos) {{
+            match self.token(diags) {{
                 Some(token @ (Token::Error{1})) => {{
-                    self.cst.data.advance(*token, true);
+                    self.cst.data.advance(token, true);
                     continue;
                 }}
-                Some(token) if self.predicate_skip(*token) => {{
-                    self.cst.data.advance(*token, true);
+                Some(token) if self.predicate_skip(token) => {{
+                    self.cst.data.advance(token, true);
                     continue;
                 }}
                 Some(token) => {{
-                    self.current = *token;
+                    self.current = token;
                     break;
                 }}
                 None => {{
@@ -431,21 +446,21 @@ impl<'a> Parser<'a> {{
     fn is_skipped(token: Token) -> bool {{
         matches!(token, Token::Error{1})
     }}
-    fn init_skip(&mut self) {{
+    fn init_skip(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {{
         loop {{
-            match self.tokens.get(self.pos) {{
+            match self.token(diags) {{
                 Some(token @ (Token::Error{1})) => {{
                     self.pos += 1;
-                    self.cst.data.advance(*token, true);
+                    self.cst.data.advance(token, true);
                     continue;
                 }}
-                Some(token) if self.predicate_skip(*token) => {{
+                Some(token) if self.predicate_skip(token) => {{
                     self.pos += 1;
-                    self.cst.data.advance(*token, true);
+                    self.cst.data.advance(token, true);
                     continue;
                 }}
                 Some(token) => {{
-                    self.current = *token;
+                    self.current = token;
                     break;
                 }}
                 None => {{
@@ -465,23 +480,6 @@ impl<'a> Parser<'a> {{
             self.error_node = Some(self.cst.data.open());
         }}
         self.advance(true, diags);
-    }}
-    fn peek(&self, lookahead: usize) -> Token {{
-        self.tokens
-            .iter()
-            .skip(self.pos)
-            .filter(|token| !Self::is_skipped(**token))
-            .nth(lookahead)
-            .map_or(self.end_of_input, |it| *it)
-    }}
-    fn peek_left(&self, lookbehind: usize) -> Token {{
-        self.tokens
-            .iter()
-            .take(self.pos + 1)
-            .rev()
-            .filter(|token| !Self::is_skipped(**token))
-            .nth(lookbehind)
-            .map_or(self.end_of_input, |it| *it)
     }}
     fn close_error_node(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {{
         if let Some(error_node) = self.error_node {{
@@ -515,17 +513,19 @@ impl<'a> Parser<'a> {{
             .get(self.pos)
             .map_or(self.max_offset..self.max_offset, |span| span.clone())
     }}
-    fn get_state(&self, diags: &[<Self as ParserCallbacks<'a>>::Diagnostic]) -> ParserState {{
+    fn get_state(&self, diags: &[<Self as ParserCallbacks<'a>>::Diagnostic]) -> ParserState<<Self as ParserCallbacks<'a>>::State> {{
         ParserState {{
             pos: self.pos,
             current: self.current,
             truncation_mark: self.cst.data.mark_truncation(),
             diag_count: diags.len(),
+            state: self.state.clone(),
+            lexed: self.tokens.len(),
         }}
     }}
     fn set_state(
         &mut self,
-        state: &ParserState,
+        state: &ParserState<<Self as ParserCallbacks<'a>>::State>,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>
     ) {{
         self.pos = state.pos;
@@ -537,6 +537,9 @@ impl<'a> Parser<'a> {{
             }}
         }}
         self.cst.data.truncate(state.truncation_mark.clone());
+        self.state = state.state.clone();
+        self.tokens.truncate(state.lexed);
+        self.cst.data.spans.truncate(state.lexed);
     }}
     fn create_node(
         &mut self,
@@ -554,6 +557,7 @@ impl<'a> Parser<'a> {{
         source: &'a str,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
         mut context: <Self as ParserCallbacks<'a>>::Context,
+        state: <Self as ParserCallbacks<'a>>::State,
     ) -> Parser<'a> {{
         let (tokens, spans) = Self::create_tokens(&mut context, source, diags);
         let max_offset = source.len();
@@ -568,6 +572,7 @@ impl<'a> Parser<'a> {{
             error_node: None,
             in_ordered_choice: false,
             error_since_advance: false,
+            state,
         }}
     }}
     pub fn new(
@@ -576,9 +581,10 @@ impl<'a> Parser<'a> {{
     ) -> Parser<'a>
     where
         for<'trivial_bound> <Self as ParserCallbacks<'a>>::Context: Default,
+        for<'trivial_bound> <Self as ParserCallbacks<'a>>::State: Default,
     {{
         #[allow(clippy::unit_arg)]
-        Self::new_with_context(source, diags, <Self as ParserCallbacks<'a>>::Context::default())
+        Self::new_with_context(source, diags, <Self as ParserCallbacks<'a>>::Context::default(), <Self as ParserCallbacks<'a>>::State::default())
     }}
     fn parse_rule<RuleParser: Fn(&mut Self, &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>)>(
         mut self,
@@ -586,21 +592,21 @@ impl<'a> Parser<'a> {{
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
         root: Rule,
     ) -> Cst<'a> {{
-        let token_count = self.tokens.len();
         let m = self.open(diags);
-        self.init_skip();
+        self.init_skip(diags);
 
         rule(&mut self, diags);
 
         self.close_error_node(diags);
-        if self.pos != token_count {{
+        if self.token(diags).is_some() {{
             self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
             let error_tree = self.open(diags);
-            while self.pos < token_count {{
-                let token = self.tokens[self.pos];
+
+            while let Some(token) = self.token(diags) {{
                 self.cst.data.advance(token, Self::is_skipped(token));
                 self.pos += 1;
             }}
+
             self.cst.data.close(error_tree, Rule::Error);
             self.create_node_error(NodeRef(error_tree.0), diags);
         }}

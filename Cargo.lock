@@ -480,6 +480,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lelwel-onthefly"
+version = "0.0.0"
+dependencies = [
+ "codespan-reporting",
+ "lelwel",
+]
+
+[[package]]
 name = "lelwel-python2"
 version = "0.0.0"
 dependencies = [
