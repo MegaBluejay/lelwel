@@ -507,7 +507,7 @@ impl RustOutput {
 
         // right recursive or non-recursive branches
         Self::output_node_kind_decl(output, has_rule_rename, name, 3, true)?;
-        output.write_all(b"            match parser.current {\n")?;
+        output.write_all(b"            match parser.current(diags) {\n")?;
         let ops = if let Regex::Alternation(alt) = regex {
             alt.operands(cst)
         } else {
@@ -613,7 +613,7 @@ impl RustOutput {
         // left recursive branches
         output.write_all(b"            loop {\n")?;
         Self::output_node_kind_decl(output, has_rule_rename, name, 4, false)?;
-        output.write_all(b"                match parser.current {\n")?;
+        output.write_all(b"                match parser.current(diags) {\n")?;
         for branch in recursive.branches() {
             let (concat, left_index, right_index) = match branch {
                 Recursion::Left(Regex::Concat(concat), index) => (concat, *index, None),
@@ -853,7 +853,7 @@ impl RustOutput {
         output.write_all(
             format!(
                 "loop {{\
-               \n    match {parser_name}.current {{\
+               \n    match {parser_name}.current(diags) {{\
                \n        {}{} => {{\n",
                 sema.first_sets[&op.syntax()].pattern(2),
                 Self::get_predicate(cst, rule_name, op, parser_name)
@@ -1020,7 +1020,7 @@ impl RustOutput {
                     let predict = &sema.predict_sets[&op.syntax()];
                     output.write_all(
                         format!(
-                            "if matches!({parser_name}.current, {}) {{\n",
+                            "if matches!({parser_name}.current(diags), {}) {{\n",
                             predict.pattern(1)
                         )
                         .indent(level + 1)
@@ -1077,7 +1077,7 @@ impl RustOutput {
                 let predict = &sema.predict_sets[&op.syntax()];
                 output.write_all(
                     format!(
-                        "if matches!({parser_name}.current, {}) {{\n",
+                        "if matches!({parser_name}.current(diags), {}) {{\n",
                         predict.pattern(1)
                     )
                     .indent(level + 1)
@@ -1127,7 +1127,7 @@ impl RustOutput {
             }
             Regex::Alternation(alt) => {
                 output.write_all(
-                    format!("match {parser_name}.current {{\n")
+                    format!("match {parser_name}.current(diags) {{\n")
                         .indent(level)
                         .as_bytes(),
                 )?;
@@ -1329,8 +1329,8 @@ impl RustOutput {
                 output.write_all(
                     format!(
                         "let open_node = {parser_name}.open_before({mark}, diags);\
-                       \n{parser_name}.close(open_node, Rule::{}, diags);\
-                       \n{parser_name}.create_node_{node_name}(NodeRef({mark}.0), diags);\n",
+                       \nlet closed = {parser_name}.close(open_node, Rule::{}, diags);\
+                       \n{parser_name}.create_node_{node_name}(NodeRef(closed.0), diags);\n",
                         snake_to_pascal_case(node_name)
                     )
                     .indent(level)

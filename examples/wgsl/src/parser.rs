@@ -137,8 +137,8 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     fn action_template_list_1(&mut self, _diags: &mut Vec<Diagnostic>) {
         self.find_template_list();
     }
-    fn action_expr_template_list_1(&mut self, _diags: &mut Vec<Diagnostic>) {
-        if self.current == Token::Lt {
+    fn action_expr_template_list_1(&mut self, diags: &mut Vec<Diagnostic>) {
+        if self.current(diags) == Token::Lt {
             self.find_template_list();
         }
     }
@@ -152,13 +152,13 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         self.is_swizzle_name()
     }
     fn predicate_expression_2(&self) -> bool {
-        if self.current == Token::Gt && self.context.template_end.contains(&self.pos) {
+        if self.tokens[self.pos] == Token::Gt && self.context.template_end.contains(&self.pos) {
             return false;
         }
-        self.tokens[self.pos + 1] == self.current
+        self.tokens[self.pos + 1] == self.tokens[self.pos]
     }
     fn predicate_expression_3(&self) -> bool {
-        self.current != Token::Gt || !self.context.template_end.contains(&self.pos)
+        self.tokens[self.pos] != Token::Gt || !self.context.template_end.contains(&self.pos)
     }
     fn predicate_expression_4(&self) -> bool {
         self.tokens[self.pos + 1] != Token::Eq
@@ -191,14 +191,14 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         )
     }
     fn predicate_compound_assignment_operator_1(&self) -> bool {
-        self.tokens[self.pos + 1] == self.current && self.tokens[self.pos + 2] == Token::Eq
+        self.tokens[self.pos + 1] == self.tokens[self.pos] && self.tokens[self.pos + 2] == Token::Eq
     }
     fn predicate_lhs_expression_1(&self) -> bool {
         self.is_swizzle_name()
     }
 
     fn action_let_decl_1(&mut self, diags: &mut Vec<Self::Diagnostic>) {
-        if self.active_error() && self.current == Token::Semi {
+        if self.active_error() && self.current(diags) == Token::Semi {
             diags
                 .last_mut()
                 .unwrap()
@@ -207,7 +207,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         }
     }
     fn action_const_decl_1(&mut self, diags: &mut Vec<Self::Diagnostic>) {
-        if self.active_error() && self.current == Token::Semi {
+        if self.active_error() && self.current(diags) == Token::Semi {
             diags
                 .last_mut()
                 .unwrap()

@@ -272,22 +272,22 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         }
     }
     fn predicate_declaration_specifiers_1(&self) -> bool {
-        self.current != Token::Identifier
+        self.tokens[self.pos] != Token::Identifier
             || (!self.context.has_type_specifier && self.is_type_name(self.pos))
     }
     fn predicate_declaration_specifiers_2(&self) -> bool {
-        if self.current == Token::Atomic {
+        if self.tokens[self.pos] == Token::Atomic {
             self.tokens[self.pos + 1] == Token::LPar
         } else {
             true
         }
     }
     fn predicate_specifier_qualifier_list_1(&self) -> bool {
-        self.current != Token::Identifier
+        self.tokens[self.pos] != Token::Identifier
             || (!self.context.has_type_specifier && self.is_type_name(self.pos))
     }
     fn predicate_specifier_qualifier_list_2(&self) -> bool {
-        if self.current == Token::Atomic {
+        if self.tokens[self.pos] == Token::Atomic {
             self.tokens[self.pos + 1] == Token::LPar
         } else {
             true
@@ -298,7 +298,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         self.tokens[self.pos + 1] != Token::RBrace
     }
     fn predicate_alignment_specifier_1(&self) -> bool {
-        self.current != Token::Identifier || self.is_type_name(self.pos)
+        self.tokens[self.pos] != Token::Identifier || self.is_type_name(self.pos)
     }
     fn predicate_direct_declarator_1(&self) -> bool {
         // use extra lookahead
@@ -318,7 +318,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         // check if the parameter declaration has a direct or abstract declarator
         // if all initial '*', type qualifier, and '(' tokens are followed by an identifier it must be
         // a normal declarator
-        if self.current != Token::Star && self.current != Token::LPar {
+        if self.tokens[self.pos] != Token::Star && self.tokens[self.pos] != Token::LPar {
             return true;
         }
         let mut it = self.tokens[self.pos..]
@@ -363,10 +363,10 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
     fn predicate_statement_1(&self) -> bool {
         // use extra lookahead
-        self.current != Token::Identifier || self.tokens[self.pos + 1] == Token::Colon
+        self.tokens[self.pos] != Token::Identifier || self.tokens[self.pos + 1] == Token::Colon
     }
     fn predicate_block_item_1(&self) -> bool {
-        match self.current {
+        match self.tokens[self.pos] {
             Token::Identifier => {
                 self.is_type_name(self.pos) && self.tokens[self.pos + 1] != Token::Colon
             }
@@ -392,10 +392,10 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         }
     }
     fn predicate_for_statement_1(&self) -> bool {
-        self.current != Token::Identifier || self.is_type_name(self.pos)
+        self.tokens[self.pos] != Token::Identifier || self.is_type_name(self.pos)
     }
     fn predicate_external_declaration_1(&self) -> bool {
-        self.current != Token::Identifier || self.is_type_name(self.pos)
+        self.tokens[self.pos] != Token::Identifier || self.is_type_name(self.pos)
     }
     fn predicate_external_declaration_2(&self) -> bool {
         if let Some(decl) = self.context.first_declarator_in_list {
@@ -414,7 +414,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         self.tokens[self.pos + 1] == Token::Comma || self.tokens[self.pos + 1] == Token::RPar
     }
     fn predicate_typeof_specifier_1(&self) -> bool {
-        self.current != Token::Identifier || self.is_type_name(self.pos)
+        self.tokens[self.pos] != Token::Identifier || self.is_type_name(self.pos)
     }
 
     fn action_compound_statement_1(&mut self, _diags: &mut Vec<Diagnostic>) {

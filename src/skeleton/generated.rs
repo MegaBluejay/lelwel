@@ -82,6 +82,8 @@ struct MarkTruncation {{
     node_count: usize,
     token_count: usize,
     non_skip_len: usize,
+    open: usize,
+    starts_len: usize,
 }}
 
 /// An iterator for child nodes of a CST node.
@@ -119,6 +121,8 @@ pub struct CstData {{
     nodes: Vec<Node>,
     token_count: usize,
     non_skip_len: usize,
+    open: usize,
+    starts: Vec<usize>,
 }}
 #[allow(dead_code)]
 impl CstData {{
@@ -129,43 +133,81 @@ impl CstData {{
             nodes,
             token_count: 0,
             non_skip_len: 0,
+            open: 0,
+            starts: vec![],
         }}
     }}
-    fn open(&mut self) -> MarkOpened {{
-        let mark = MarkOpened(self.nodes.len());
-        self.nodes.push(Node::Rule(Rule::Error, 0.into()));
+    fn flush_open(&mut self) {{
+        if self.open == 0 {{
+            return;
+        }}
+        for _ in 0..self.open {{
+            self.starts.push(self.nodes.len());
+            self.nodes.push(Node::Rule(Rule::Error, 0.into()));
+        }}
+        self.open = 0;
         self.non_skip_len = self.nodes.len();
-        mark
+    }}
+    fn open(&mut self) -> MarkOpened {{
+        self.open += 1;
+        if self.nodes.len() == 0 {{
+            self.flush_open();
+        }}
+        MarkOpened(self.starts.len() + self.open)
     }}
     fn close(&mut self, mark: MarkOpened, rule: Rule) -> MarkClosed {{
+        self.flush_open();
+        assert_eq!(mark.0, self.starts.len());
+        let start = self.starts.pop().expect("no start");
         let len = self.non_skip_len - 1;
-        self.nodes[mark.0] = Node::Rule(
+        self.nodes[start] = Node::Rule(
             rule,
-            if mark.0 > len {{
-                self.non_skip_len += mark.0 - len;
+            if start > len {{
+                self.non_skip_len += start - len;
                 0
             }} else {{
-                len - mark.0
+                len - start
             }}
             .into(),
         );
-        MarkClosed(mark.0)
+        MarkClosed(start)
     }}
     fn close_root(&mut self, mark: MarkOpened, rule: Rule) -> MarkClosed {{
-        self.nodes[mark.0] = Node::Rule(rule, (self.nodes.len() - 1 - mark.0).into());
-        MarkClosed(mark.0)
+        self.flush_open();
+        assert_eq!(mark.0, self.starts.len());
+        assert_eq!(mark.0, 1);
+        let start = self.starts.pop().expect("no start");
+        assert_eq!(start, 0);
+        self.nodes[start] = Node::Rule(rule, (self.nodes.len() - start - 1).into());
+        MarkClosed(start)
     }}
     fn advance(&mut self, token: Token, skip: bool) {{
+        if !skip {{
+            self.flush_open();
+        }}
         self.nodes.push(Node::Token(token, self.token_count.into()));
         self.token_count += 1;
         if !skip {{
             self.non_skip_len = self.nodes.len();
         }}
     }}
-    fn open_before(&mut self, mark: MarkClosed) -> MarkOpened {{
-        self.nodes.insert(mark.0, Node::Rule(Rule::Error, 0.into()));
+    fn open_before(&mut self, mark: MarkClosed, is_skipped: fn(Token) -> bool) -> MarkOpened {{
+        self.flush_open();
+        let from = self.starts
+            .last()
+            .map_or(mark.0, |&s| s + 1)
+            .max(mark.0);
+        let i = self.nodes[from..]
+            .iter()
+            .position(|node| match node {{
+                Node::Rule(_, _) => true,
+                Node::Token(token, _) => !is_skipped(*token),
+            }})
+            .map_or(self.nodes.len(), |pos| from + pos);
+        self.nodes.insert(i, Node::Rule(Rule::Error, 0.into()));
+        self.starts.push(i);
         self.non_skip_len += 1;
-        MarkOpened(mark.0)
+        MarkOpened(self.starts.len())
     }}
     fn mark(&self) -> MarkClosed {{
         MarkClosed(self.nodes.len())
@@ -175,12 +217,16 @@ impl CstData {{
             node_count: self.nodes.len(),
             token_count: self.token_count,
             non_skip_len: self.non_skip_len,
+            open: self.open,
+            starts_len: self.starts.len(),
         }}
     }}
     fn truncate(&mut self, mark: MarkTruncation) {{
         self.nodes.truncate(mark.node_count);
         self.token_count = mark.token_count;
         self.non_skip_len = mark.non_skip_len;
+        self.open = mark.open;
+        self.starts.truncate(mark.starts_len);
     }}
     pub fn children(&self, node_ref: NodeRef) -> CstChildren<'_> {{
         let iter = if let Node::Rule(_, end_offset) = self.nodes[node_ref.0] {{
@@ -343,7 +389,7 @@ impl std::fmt::Debug for Rule {{
 
 macro_rules! expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current {{
+        if let Token::$token = $self.current($diags) {{
             $self.advance(false, $diags);
         }} else {{
             $self.error($diags, err![$self, $msg]);
@@ -353,7 +399,7 @@ macro_rules! expect {{
 #[allow(unused_macros)]
 macro_rules! try_expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current {{
+        if let Token::$token = $self.current($diags) {{
             $self.advance(false, $diags);
         }} else {{
             if $self.in_ordered_choice {{
@@ -366,7 +412,7 @@ macro_rules! try_expect {{
 
 struct ParserState<S> {{
     pos: usize,
-    current: Token,
+    current: Option<Token>,
     truncation_mark: MarkTruncation,
     diag_count: usize,
     state: S,
@@ -376,7 +422,7 @@ pub struct Parser<'a> {{
     cst: Cst<'a>,
     tokens: Vec<Token>,
     pos: usize,
-    current: Token,
+    current: Option<Token>,
     end_of_input: Token,
     max_offset: usize,
     #[allow(dead_code)]
@@ -415,60 +461,43 @@ impl<'a> Parser<'a> {{
 
         Some(token)
     }}
+    fn current(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {{
+        if let Some(token) = self.current {{
+            return token;
+        }}
+
+        loop {{
+            match self.token(diags) {{
+                Some(token @ (Token::Error{1})) => {{
+                    self.pos += 1;
+                    self.cst.data.advance(token, true);
+                }}
+                Some(token) if self.predicate_skip(token) => {{
+                    self.pos += 1;
+                    self.cst.data.advance(token, true);
+                }}
+                Some(token) => {{
+                    self.current = Some(token);
+                    return token;
+                }}
+                None => {{
+                    self.current = Some(self.end_of_input);
+                    return self.end_of_input;
+                }}
+            }}
+        }}
+    }}
     fn advance(&mut self, error: bool, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {{
         if !error {{
             self.close_error_node(diags);
             self.error_since_advance = false;
         }}
-        self.cst.data.advance(self.current, false);
-        loop {{
-            self.pos += 1;
-            match self.token(diags) {{
-                Some(token @ (Token::Error{1})) => {{
-                    self.cst.data.advance(token, true);
-                    continue;
-                }}
-                Some(token) if self.predicate_skip(token) => {{
-                    self.cst.data.advance(token, true);
-                    continue;
-                }}
-                Some(token) => {{
-                    self.current = token;
-                    break;
-                }}
-                None => {{
-                    self.current = self.end_of_input;
-                    break;
-                }}
-            }}
-        }}
+        let token = self.current.take().expect("advance before current");
+        self.cst.data.advance(token, false);
+        self.pos += 1;
     }}
     fn is_skipped(token: Token) -> bool {{
         matches!(token, Token::Error{1})
-    }}
-    fn init_skip(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {{
-        loop {{
-            match self.token(diags) {{
-                Some(token @ (Token::Error{1})) => {{
-                    self.pos += 1;
-                    self.cst.data.advance(token, true);
-                    continue;
-                }}
-                Some(token) if self.predicate_skip(token) => {{
-                    self.pos += 1;
-                    self.cst.data.advance(token, true);
-                    continue;
-                }}
-                Some(token) => {{
-                    self.current = token;
-                    break;
-                }}
-                None => {{
-                    self.current = self.end_of_input;
-                    break;
-                }}
-            }}
-        }}
     }}
     fn advance_with_error(
         &mut self,
@@ -483,8 +512,8 @@ impl<'a> Parser<'a> {{
     }}
     fn close_error_node(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {{
         if let Some(error_node) = self.error_node {{
-            self.cst.data.close(error_node, Rule::Error);
-            self.create_node_error(NodeRef(error_node.0), diags);
+            let closed = self.cst.data.close(error_node, Rule::Error);
+            self.create_node_error(NodeRef(closed.0), diags);
             self.error_node = None;
         }}
     }}
@@ -494,7 +523,7 @@ impl<'a> Parser<'a> {{
     }}
     fn open_before(&mut self, mark: MarkClosed, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkOpened {{
         self.close_error_node(diags);
-        self.cst.data.open_before(mark)
+        self.cst.data.open_before(mark, Self::is_skipped)
     }}
     fn close(&mut self, mark: MarkOpened, rule: Rule, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkClosed {{
         self.close_error_node(diags);
@@ -562,7 +591,7 @@ impl<'a> Parser<'a> {{
         let (tokens, spans) = Self::create_tokens(&mut context, source, diags);
         let max_offset = source.len();
         Self {{
-            current: Token::EOF,
+            current: None,
             end_of_input: Token::EOF,
             cst: Cst {{ data: CstData::new(spans), source }},
             tokens,
@@ -593,22 +622,20 @@ impl<'a> Parser<'a> {{
         root: Rule,
     ) -> Cst<'a> {{
         let m = self.open(diags);
-        self.init_skip(diags);
 
         rule(&mut self, diags);
 
         self.close_error_node(diags);
-        if self.token(diags).is_some() {{
+        if self.current(diags) != self.end_of_input {{
             self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
             let error_tree = self.open(diags);
 
-            while let Some(token) = self.token(diags) {{
-                self.cst.data.advance(token, Self::is_skipped(token));
-                self.pos += 1;
+            while let token = self.current(diags) && token != self.end_of_input {{
+                self.advance(false, diags);
             }}
 
-            self.cst.data.close(error_tree, Rule::Error);
-            self.create_node_error(NodeRef(error_tree.0), diags);
+            let closed = self.cst.data.close(error_tree, Rule::Error);
+            self.create_node_error(NodeRef(closed.0), diags);
         }}
 
         let closed = self.cst.data.close_root(m, root);
