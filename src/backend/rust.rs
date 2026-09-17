@@ -170,11 +170,7 @@ impl RustOutput {
             \n        None\
             \n    }\
             \n    /// Called when diagnostic is created.\
-            \n    fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;\
-            \n    /// This predicate can be used to skip normal tokens.\
-            \n    fn predicate_skip(&self, _token: Token) -> bool {\
-            \n        false\
-            \n    }\n\n"
+            \n    fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;\n\n"
         } else {
             b"impl<'a> ParserCallbacks<'a> for Parser<'a> {\
             \n    type Diagnostic = Diagnostic;\

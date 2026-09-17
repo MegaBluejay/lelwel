@@ -472,10 +472,6 @@ impl<'a> Parser<'a> {{
                     self.pos += 1;
                     self.cst.data.advance(token, true);
                 }}
-                Some(token) if self.predicate_skip(token) => {{
-                    self.pos += 1;
-                    self.cst.data.advance(token, true);
-                }}
                 Some(token) => {{
                     self.current = Some(token);
                     return token;

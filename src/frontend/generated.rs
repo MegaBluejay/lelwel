@@ -542,10 +542,6 @@ impl<'a> Parser<'a> {
                     self.pos += 1;
                     self.cst.data.advance(token, true);
                 }
-                Some(token) if self.predicate_skip(token) => {
-                    self.pos += 1;
-                    self.cst.data.advance(token, true);
-                }
                 Some(token) => {
                     self.current = Some(token);
                     return token;
@@ -1605,10 +1601,6 @@ pub trait ParserCallbacks<'a> {
     }
     /// Called when diagnostic is created.
     fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;
-    /// This predicate can be used to skip normal tokens.
-    fn predicate_skip(&self, _token: Token) -> bool {
-        false
-    }
 
     /// Called when `action` node is created.
     fn create_node_action(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
