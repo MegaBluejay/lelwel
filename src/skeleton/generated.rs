@@ -150,7 +150,7 @@ impl CstData {{
     }}
     fn open(&mut self) -> MarkOpened {{
         self.open += 1;
-        if self.nodes.len() == 0 {{
+        if self.nodes.is_empty() {{
             self.flush_open();
         }}
         MarkOpened(self.starts.len() + self.open)
@@ -538,6 +538,7 @@ impl<'a> Parser<'a> {{
             .get(self.pos)
             .map_or(self.max_offset..self.max_offset, |span| span.clone())
     }}
+    #[allow(clippy::clone_on_copy, clippy::unit_arg)]
     fn get_state(&self, diags: &[<Self as ParserCallbacks<'a>>::Diagnostic]) -> ParserState<<Self as ParserCallbacks<'a>>::State> {{
         ParserState {{
             pos: self.pos,
@@ -548,6 +549,7 @@ impl<'a> Parser<'a> {{
             lexed: self.tokens.len(),
         }}
     }}
+    #[allow(clippy::clone_on_copy, clippy::unit_arg)]
     fn set_state(
         &mut self,
         state: &ParserState<<Self as ParserCallbacks<'a>>::State>,
