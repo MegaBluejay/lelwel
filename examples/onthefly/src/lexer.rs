@@ -11,8 +11,13 @@ pub enum Token {
     Id,
     Num,
     Plus,
+    Minus,
+    Star,
     Eq,
     Semi,
+    Comma,
+    LParen,
+    RParen,
 }
 
 /// The lexer state that lives inside `Parser.state`.

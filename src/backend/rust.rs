@@ -60,6 +60,7 @@ impl Indent for String {
 trait Generator {
     fn pattern(&self, level: usize) -> String;
     fn error(&self, token_symbols: &FxHashMap<&str, &str>) -> String;
+    fn slice(&self) -> String;
 }
 
 impl Generator for std::collections::BTreeSet<TokenName<'_>> {
@@ -80,6 +81,10 @@ impl Generator for std::collections::BTreeSet<TokenName<'_>> {
             })
             .collect::<Vec<_>>();
         syntax_error_message(&expected)
+    }
+    fn slice(&self) -> String {
+        let symbols: Vec<_> = self.iter().map(|s| format!("Token::{}", s.0)).collect();
+        format!("&[{}]", symbols.join(", "))
     }
 }
 
@@ -166,7 +171,7 @@ impl RustOutput {
             \n\
             \n    /// Called at the start of the parse to generate all tokens and corresponding spans.\
             \n    fn create_tokens(context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>);\
-            \n    fn lex(&mut self, _diags: &mut Vec<Self::Diagnostic>) -> Option<(Token, Span)> {\
+            \n    fn lex(&mut self, _expect: &'static [Token], _diags: &mut Vec<Self::Diagnostic>) -> Option<(Token, Span)> {\
             \n        None\
             \n    }\
             \n    /// Called when diagnostic is created.\
@@ -503,7 +508,12 @@ impl RustOutput {
 
         // right recursive or non-recursive branches
         Self::output_node_kind_decl(output, has_rule_rename, name, 3, true)?;
-        output.write_all(b"            match parser.current(diags) {\n")?;
+        let slice = sema.predict_sets[&regex.syntax()].slice();
+        output.write_all(
+            format!("match parser.current({slice}, diags) {{\n")
+                .indent(3)
+                .as_bytes(),
+        )?;
         let ops = if let Regex::Alternation(alt) = regex {
             alt.operands(cst)
         } else {
@@ -609,7 +619,12 @@ impl RustOutput {
         // left recursive branches
         output.write_all(b"            loop {\n")?;
         Self::output_node_kind_decl(output, has_rule_rename, name, 4, false)?;
-        output.write_all(b"                match parser.current(diags) {\n")?;
+        let slice = sema.follow_sets[&regex.syntax()].slice();
+        output.write_all(
+            format!("match parser.current({slice}, diags) {{\n")
+                .indent(4)
+                .as_bytes(),
+        )?;
         for branch in recursive.branches() {
             let (concat, left_index, right_index) = match branch {
                 Recursion::Left(Regex::Concat(concat), index) => (concat, *index, None),
@@ -846,10 +861,17 @@ impl RustOutput {
         ordered_choice_return: &str,
         is_loop: bool,
     ) -> std::io::Result<()> {
+        let expected = if is_loop {
+            &sema.follow_sets[&op.syntax()]
+        } else {
+            &sema.predict_sets[&regex.syntax()]
+        };
+
+        let slice = expected.slice();
         output.write_all(
             format!(
                 "loop {{\
-               \n    match {parser_name}.current(diags) {{\
+               \n    match {parser_name}.current({slice}, diags) {{\
                \n        {}{} => {{\n",
                 sema.first_sets[&op.syntax()].pattern(2),
                 Self::get_predicate(cst, rule_name, op, parser_name)
@@ -884,11 +906,7 @@ impl RustOutput {
 
         let ordered_choice_return = ordered_choice_return.indent(3);
         let follow = sema.follow_sets[&regex.syntax()].pattern(2);
-        let expected = if is_loop {
-            sema.follow_sets[&op.syntax()].error(token_symbols)
-        } else {
-            sema.predict_sets[&regex.syntax()].error(token_symbols)
-        };
+        let expected = expected.error(token_symbols);
         let recovery = &sema.recovery_sets[&regex.syntax()];
         let recovery = if recovery.is_empty() {
             "".to_string()
@@ -1016,7 +1034,8 @@ impl RustOutput {
                     let predict = &sema.predict_sets[&op.syntax()];
                     output.write_all(
                         format!(
-                            "if matches!({parser_name}.current(diags), {}) {{\n",
+                            "if matches!({parser_name}.current({}, diags), {}) {{\n",
+                            predict.slice(),
                             predict.pattern(1)
                         )
                         .indent(level + 1)
@@ -1073,7 +1092,8 @@ impl RustOutput {
                 let predict = &sema.predict_sets[&op.syntax()];
                 output.write_all(
                     format!(
-                        "if matches!({parser_name}.current(diags), {}) {{\n",
+                        "if matches!({parser_name}.current({}, diags), {}) {{\n",
+                        predict.slice(),
                         predict.pattern(1)
                     )
                     .indent(level + 1)
@@ -1122,8 +1142,9 @@ impl RustOutput {
                 }
             }
             Regex::Alternation(alt) => {
+                let slice = sema.predict_sets[&regex.syntax()].slice();
                 output.write_all(
-                    format!("match {parser_name}.current(diags) {{\n")
+                    format!("match {parser_name}.current({slice}, diags) {{\n")
                         .indent(level)
                         .as_bytes(),
                 )?;

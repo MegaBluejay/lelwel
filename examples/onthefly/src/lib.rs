@@ -11,6 +11,7 @@ use lexer::LexState;
 use parser::*;
 
 pub use lexer::Token;
+pub use parser::LexCall;
 
 fn render(source: &str, diags: &[Diagnostic], cst: &Cst<'_>) -> Vec<String> {
     let mut writer = NoColor::new(BufWriter::new(Vec::new()));
@@ -36,8 +37,9 @@ pub fn generate_syntax_tree(source: &str) -> Vec<String> {
 
 /// Parses `source` and returns the CST tree, the diagnostics and the audit
 /// log of every `lex` call, including calls that were rolled back by ordered
-/// choice. The log is what proves tokens are re-lexed after a backtrack.
-pub fn parse_with_log(source: &str) -> (Vec<String>, Vec<(usize, Token)>) {
+/// choice. The log is what proves tokens are re-lexed after a backtrack, and
+/// it carries the expected set each call was given.
+pub fn parse_with_log(source: &str) -> (Vec<String>, Vec<LexCall>) {
     let mut diags = vec![];
     let log = LexLog::default();
     let cst = Parser::new_with_context(source, &mut diags, log.clone(), LexState::default())

@@ -138,7 +138,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         self.find_template_list();
     }
     fn action_expr_template_list_1(&mut self, diags: &mut Vec<Diagnostic>) {
-        if self.current(diags) == Token::Lt {
+        if self.current(&[], diags) == Token::Lt {
             self.find_template_list();
         }
     }
@@ -198,7 +198,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
 
     fn action_let_decl_1(&mut self, diags: &mut Vec<Self::Diagnostic>) {
-        if self.active_error() && self.current(diags) == Token::Semi {
+        if self.active_error() && self.current(&[], diags) == Token::Semi {
             diags
                 .last_mut()
                 .unwrap()
@@ -207,7 +207,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
         }
     }
     fn action_const_decl_1(&mut self, diags: &mut Vec<Self::Diagnostic>) {
-        if self.active_error() && self.current(diags) == Token::Semi {
+        if self.active_error() && self.current(&[], diags) == Token::Semi {
             diags
                 .last_mut()
                 .unwrap()

@@ -389,7 +389,7 @@ impl std::fmt::Debug for Rule {{
 
 macro_rules! expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current($diags) {{
+        if let Token::$token = $self.current(&[Token::$token], $diags) {{
             $self.advance(false, $diags);
         }} else {{
             $self.error($diags, err![$self, $msg]);
@@ -399,7 +399,7 @@ macro_rules! expect {{
 #[allow(unused_macros)]
 macro_rules! try_expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current($diags) {{
+        if let Token::$token = $self.current(&[Token::$token], $diags) {{
             $self.advance(false, $diags);
         }} else {{
             if $self.in_ordered_choice {{
@@ -449,25 +449,25 @@ impl<'a> Parser<'a> {{
         self.error_since_advance = true;
         diags.push(diag);
     }}
-    fn token(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
+    fn token(&mut self, expect: &'static [Token], diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
         if self.pos < self.tokens.len() {{
             return Some(self.tokens[self.pos])
         }}
 
-        let (token, span) = self.lex(diags)?;
+        let (token, span) = self.lex(expect, diags)?;
 
         self.tokens.push(token);
         self.cst.data.spans.push(span);
 
         Some(token)
     }}
-    fn current(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {{
+    fn current(&mut self, expect: &'static [Token], diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {{
         if let Some(token) = self.current {{
             return token;
         }}
 
         loop {{
-            match self.token(diags) {{
+            match self.token(expect, diags) {{
                 Some(token @ (Token::Error{1})) => {{
                     self.pos += 1;
                     self.cst.data.advance(token, true);
@@ -622,11 +622,11 @@ impl<'a> Parser<'a> {{
         rule(&mut self, diags);
 
         self.close_error_node(diags);
-        if self.current(diags) != self.end_of_input {{
+        if self.current(&[], diags) != self.end_of_input {{
             self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
             let error_tree = self.open(diags);
 
-            while let token = self.current(diags) && token != self.end_of_input {{
+            while let token = self.current(&[], diags) && token != self.end_of_input {{
                 self.advance(false, diags);
             }}
 

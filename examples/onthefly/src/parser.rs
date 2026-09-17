@@ -5,12 +5,24 @@ use std::rc::Rc;
 
 pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 
+/// One call into `lex`, as recorded by [`LexLog`].
+///
+/// `expected` is the set of tokens the parser was ready to accept at that
+/// point. The generated parser passes it down from its predict and follow
+/// sets: a single token for `expect!`, the predict set of an alternation or
+/// ordered choice branch, or the follow set of a loop or optional. An empty
+/// slice means the parser asked for a token without an expectation, as it
+/// does when checking for the end of input.
+pub type LexCall = (usize, Token, &'static [Token]);
+
 /// Shared audit log of lexer activity.
 ///
-/// Every call into `lex` records the byte offset it started from and the
-/// token it produced — including attempts that ordered choice later rolled
-/// back. This is how the tests can prove that a failed branch is re-lexed
-/// from scratch instead of reusing cached tokens.
+/// Every call into `lex` records the byte offset it started from, the token
+/// it produced, and the expected set it was given. Attempts that ordered
+/// choice later rolled back are included. This is how the tests can prove
+/// that a failed branch is re-lexed from scratch instead of reusing cached
+/// tokens, and that the generated predict and follow sets are the ones the
+/// grammar implies.
 ///
 /// The log lives in the `Context` rather than in the lexer `State` on
 /// purpose: `Context` is *not* restored when ordered choice backtracks,
@@ -18,8 +30,8 @@ pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 /// with the lexer position and hide the re-lexing.
 #[derive(Debug, Default, Clone)]
 pub struct LexLog {
-    /// Every `(byte offset, token)` pair the lexer was asked to produce.
-    pub calls: Rc<RefCell<Vec<(usize, Token)>>>,
+    /// Every call the lexer served, in order.
+    pub calls: Rc<RefCell<Vec<LexCall>>>,
 }
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
@@ -43,7 +55,11 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     }
 
     /// Lexes the next token, advancing the lexer state.
-    fn lex(&mut self, diags: &mut Vec<Diagnostic>) -> Option<(Token, Span)> {
+    fn lex(
+        &mut self,
+        expected: &'static [Token],
+        diags: &mut Vec<Diagnostic>,
+    ) -> Option<(Token, Span)> {
         // The parser only asks for a new token once it has consumed all
         // lexed ones, so we must resume exactly after the last cached token.
         // If an ordered choice rolled back the token list but failed to
@@ -77,8 +93,13 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
                 (Token::Num, len)
             }
             '+' => (Token::Plus, 1),
+            '-' => (Token::Minus, 1),
+            '*' => (Token::Star, 1),
             '=' => (Token::Eq, 1),
             ';' => (Token::Semi, 1),
+            ',' => (Token::Comma, 1),
+            '(' => (Token::LParen, 1),
+            ')' => (Token::RParen, 1),
             c if c.is_whitespace() => {
                 let len = rest.chars().take_while(|c| c.is_whitespace()).count();
                 (Token::Whitespace, len)
@@ -98,7 +119,10 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
 
         let span = self.state.offset..self.state.offset + len;
         self.state.offset += len;
-        self.context.calls.borrow_mut().push((span.start, token));
+        self.context
+            .calls
+            .borrow_mut()
+            .push((span.start, token, expected));
         Some((token, span))
     }
 

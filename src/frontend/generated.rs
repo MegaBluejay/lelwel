@@ -450,7 +450,7 @@ impl std::fmt::Debug for Rule {
 
 macro_rules! expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
-        if let Token::$token = $self.current($diags) {
+        if let Token::$token = $self.current(&[Token::$token], $diags) {
             $self.advance(false, $diags);
         } else {
             $self.error($diags, err![$self, $msg]);
@@ -460,7 +460,7 @@ macro_rules! expect {
 #[allow(unused_macros)]
 macro_rules! try_expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
-        if let Token::$token = $self.current($diags) {
+        if let Token::$token = $self.current(&[Token::$token], $diags) {
             $self.advance(false, $diags);
         } else {
             if $self.in_ordered_choice {
@@ -512,26 +512,31 @@ impl<'a> Parser<'a> {
     }
     fn token(
         &mut self,
+        expect: &'static [Token],
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
     ) -> Option<Token> {
         if self.pos < self.tokens.len() {
             return Some(self.tokens[self.pos]);
         }
 
-        let (token, span) = self.lex(diags)?;
+        let (token, span) = self.lex(expect, diags)?;
 
         self.tokens.push(token);
         self.cst.data.spans.push(span);
 
         Some(token)
     }
-    fn current(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {
+    fn current(
+        &mut self,
+        expect: &'static [Token],
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) -> Token {
         if let Some(token) = self.current {
             return token;
         }
 
         loop {
-            match self.token(diags) {
+            match self.token(expect, diags) {
                 Some(
                     token @ (Token::Error
                     | Token::LineComment
@@ -756,11 +761,11 @@ impl<'a> Parser<'a> {
         rule(&mut self, diags);
 
         self.close_error_node(diags);
-        if self.current(diags) != self.end_of_input {
+        if self.current(&[], diags) != self.end_of_input {
             self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
             let error_tree = self.open(diags);
 
-            while let token = self.current(diags)
+            while let token = self.current(&[], diags)
                 && token != self.end_of_input
             {
                 self.advance(false, diags);
@@ -780,7 +785,18 @@ impl<'a> Parser<'a> {
     }
     fn rule_file(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         loop {
-            match self.current(diags) {
+            match self.current(
+                &[
+                    Token::EOF,
+                    Token::Id,
+                    Token::Part,
+                    Token::Right,
+                    Token::Skip,
+                    Token::Start,
+                    Token::Token,
+                ],
+                diags,
+            ) {
                 Token::Id
                 | Token::Part
                 | Token::Right
@@ -797,7 +813,17 @@ impl<'a> Parser<'a> {
         }
     }
     fn rule_decl(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
-        match self.current(diags) {
+        match self.current(
+            &[
+                Token::Id,
+                Token::Part,
+                Token::Right,
+                Token::Skip,
+                Token::Start,
+                Token::Token,
+            ],
+            diags,
+        ) {
             Token::Token => {
                 self.rule_token_list(diags);
             }
@@ -835,7 +861,7 @@ impl<'a> Parser<'a> {
     fn rule_right_decl(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Right, "invalid syntax, expected: \'right\'", self, diags);
-        match self.current(diags) {
+        match self.current(&[Token::Id, Token::Str], diags) {
             Token::Id => {
                 expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
             }
@@ -858,9 +884,9 @@ impl<'a> Parser<'a> {
             }
         }
         loop {
-            match self.current(diags) {
+            match self.current(&[Token::Id, Token::Semi, Token::Str], diags) {
                 Token::Id | Token::Str => {
-                    match self.current(diags) {
+                    match self.current(&[Token::Id, Token::Str], diags) {
                         Token::Id => {
                             expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
                         }
@@ -911,7 +937,7 @@ impl<'a> Parser<'a> {
     fn rule_skip_decl(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Skip, "invalid syntax, expected: \'skip\'", self, diags);
-        match self.current(diags) {
+        match self.current(&[Token::Id, Token::Str], diags) {
             Token::Id => {
                 expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
             }
@@ -934,9 +960,9 @@ impl<'a> Parser<'a> {
             }
         }
         loop {
-            match self.current(diags) {
+            match self.current(&[Token::Id, Token::Semi, Token::Str], diags) {
                 Token::Id | Token::Str => {
-                    match self.current(diags) {
+                    match self.current(&[Token::Id, Token::Str], diags) {
                         Token::Id => {
                             expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
                         }
@@ -989,7 +1015,7 @@ impl<'a> Parser<'a> {
         expect!(Part, "invalid syntax, expected: \'part\'", self, diags);
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
         loop {
-            match self.current(diags) {
+            match self.current(&[Token::Id, Token::Semi], diags) {
                 Token::Id => {
                     expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
                 }
@@ -1023,7 +1049,7 @@ impl<'a> Parser<'a> {
         expect!(Token, "invalid syntax, expected: \'token\'", self, diags);
         self.rule_token_decl(diags);
         loop {
-            match self.current(diags) {
+            match self.current(&[Token::Id, Token::Semi], diags) {
                 Token::Id => {
                     self.rule_token_decl(diags);
                 }
@@ -1056,7 +1082,7 @@ impl<'a> Parser<'a> {
         let m = self.open(diags);
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
         loop {
-            match self.current(diags) {
+            match self.current(&[Token::Equal, Token::Id, Token::Semi], diags) {
                 Token::Equal => {
                     expect!(Equal, "invalid syntax, expected: \'=\'", self, diags);
                     expect!(
@@ -1101,7 +1127,7 @@ impl<'a> Parser<'a> {
         let m = self.open(diags);
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
         loop {
-            match self.current(diags) {
+            match self.current(&[Token::Colon, Token::Hat], diags) {
                 Token::Hat => {
                     expect!(Hat, "invalid syntax, expected: \'^\'", self, diags);
                     break;
@@ -1130,7 +1156,25 @@ impl<'a> Parser<'a> {
         }
         expect!(Colon, "invalid syntax, expected: \':\'", self, diags);
         loop {
-            match self.current(diags) {
+            match self.current(
+                &[
+                    Token::Action,
+                    Token::And,
+                    Token::Assertion,
+                    Token::Hat,
+                    Token::Id,
+                    Token::LBrak,
+                    Token::LPar,
+                    Token::NodeCreation,
+                    Token::NodeMarker,
+                    Token::NodeRename,
+                    Token::Predicate,
+                    Token::Semi,
+                    Token::Str,
+                    Token::Tilde,
+                ],
+                diags,
+            ) {
                 Token::Action
                 | Token::And
                 | Token::Assertion
@@ -1173,12 +1217,14 @@ impl<'a> Parser<'a> {
         let start = self.mark(diags);
         self.rule_ordered_choice(diags);
         loop {
-            match self.current(diags) {
+            match self.current(&[Token::Or, Token::RBrak, Token::RPar, Token::Semi], diags) {
                 Token::Or => {
                     expect!(Or, "invalid syntax, expected: \'|\'", self, diags);
                     self.rule_ordered_choice(diags);
                     loop {
-                        match self.current(diags) {
+                        match self
+                            .current(&[Token::Or, Token::RBrak, Token::RPar, Token::Semi], diags)
+                        {
                             Token::Or => {
                                 expect!(Or, "invalid syntax, expected: \'|\'", self, diags);
                                 self.rule_ordered_choice(diags);
@@ -1237,12 +1283,30 @@ impl<'a> Parser<'a> {
         let start = self.mark(diags);
         self.rule_concat(diags);
         loop {
-            match self.current(diags) {
+            match self.current(
+                &[
+                    Token::Or,
+                    Token::RBrak,
+                    Token::RPar,
+                    Token::Semi,
+                    Token::Slash,
+                ],
+                diags,
+            ) {
                 Token::Slash => {
                     expect!(Slash, "invalid syntax, expected: \'/\'", self, diags);
                     self.rule_concat(diags);
                     loop {
-                        match self.current(diags) {
+                        match self.current(
+                            &[
+                                Token::Or,
+                                Token::RBrak,
+                                Token::RPar,
+                                Token::Semi,
+                                Token::Slash,
+                            ],
+                            diags,
+                        ) {
                             Token::Slash => {
                                 expect!(Slash, "invalid syntax, expected: \'/\'", self, diags);
                                 self.rule_concat(diags);
@@ -1301,7 +1365,29 @@ impl<'a> Parser<'a> {
         let start = self.mark(diags);
         self.rule_postfix(diags);
         loop {
-            match self.current(diags) {
+            match self.current(
+                &[
+                    Token::Action,
+                    Token::And,
+                    Token::Assertion,
+                    Token::Hat,
+                    Token::Id,
+                    Token::LBrak,
+                    Token::LPar,
+                    Token::NodeCreation,
+                    Token::NodeMarker,
+                    Token::NodeRename,
+                    Token::Or,
+                    Token::Predicate,
+                    Token::RBrak,
+                    Token::RPar,
+                    Token::Semi,
+                    Token::Slash,
+                    Token::Str,
+                    Token::Tilde,
+                ],
+                diags,
+            ) {
                 Token::Action
                 | Token::And
                 | Token::Assertion
@@ -1317,7 +1403,29 @@ impl<'a> Parser<'a> {
                 | Token::Tilde => {
                     self.rule_postfix(diags);
                     loop {
-                        match self.current(diags) {
+                        match self.current(
+                            &[
+                                Token::Action,
+                                Token::And,
+                                Token::Assertion,
+                                Token::Hat,
+                                Token::Id,
+                                Token::LBrak,
+                                Token::LPar,
+                                Token::NodeCreation,
+                                Token::NodeMarker,
+                                Token::NodeRename,
+                                Token::Or,
+                                Token::Predicate,
+                                Token::RBrak,
+                                Token::RPar,
+                                Token::Semi,
+                                Token::Slash,
+                                Token::Str,
+                                Token::Tilde,
+                            ],
+                            diags,
+                        ) {
                             Token::Action
                             | Token::And
                             | Token::Assertion
@@ -1379,12 +1487,47 @@ impl<'a> Parser<'a> {
             mut lhs: MarkClosed,
         ) {
             let mut node_kind = Rule::Postfix;
-            match parser.current(diags) {
+            match parser.current(
+                &[
+                    Token::Action,
+                    Token::And,
+                    Token::Assertion,
+                    Token::Hat,
+                    Token::Id,
+                    Token::LBrak,
+                    Token::LPar,
+                    Token::NodeCreation,
+                    Token::NodeMarker,
+                    Token::NodeRename,
+                    Token::Predicate,
+                    Token::Str,
+                    Token::Tilde,
+                ],
+                diags,
+            ) {
                 Token::LPar => {
                     let m = parser.open(diags);
                     expect!(LPar, "invalid syntax, expected: \'(\'", parser, diags);
                     loop {
-                        match parser.current(diags) {
+                        match parser.current(
+                            &[
+                                Token::Action,
+                                Token::And,
+                                Token::Assertion,
+                                Token::Hat,
+                                Token::Id,
+                                Token::LBrak,
+                                Token::LPar,
+                                Token::NodeCreation,
+                                Token::NodeMarker,
+                                Token::NodeRename,
+                                Token::Predicate,
+                                Token::RPar,
+                                Token::Str,
+                                Token::Tilde,
+                            ],
+                            diags,
+                        ) {
                             Token::Action
                             | Token::And
                             | Token::Assertion
@@ -1554,7 +1697,31 @@ impl<'a> Parser<'a> {
             }
             loop {
                 node_kind = Rule::Postfix;
-                match parser.current(diags) {
+                match parser.current(
+                    &[
+                        Token::Action,
+                        Token::And,
+                        Token::Assertion,
+                        Token::Hat,
+                        Token::Id,
+                        Token::LBrak,
+                        Token::LPar,
+                        Token::NodeCreation,
+                        Token::NodeMarker,
+                        Token::NodeRename,
+                        Token::Or,
+                        Token::Plus,
+                        Token::Predicate,
+                        Token::RBrak,
+                        Token::RPar,
+                        Token::Semi,
+                        Token::Slash,
+                        Token::Star,
+                        Token::Str,
+                        Token::Tilde,
+                    ],
+                    diags,
+                ) {
                     Token::Star => {
                         let m = parser.open_before(lhs, diags);
                         expect!(Star, "invalid syntax, expected: \'*\'", parser, diags);
@@ -1596,7 +1763,11 @@ pub trait ParserCallbacks<'a> {
         source: &'a str,
         diags: &mut Vec<Self::Diagnostic>,
     ) -> (Vec<Token>, Vec<Span>);
-    fn lex(&mut self, _diags: &mut Vec<Self::Diagnostic>) -> Option<(Token, Span)> {
+    fn lex(
+        &mut self,
+        _expect: &'static [Token],
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) -> Option<(Token, Span)> {
         None
     }
     /// Called when diagnostic is created.

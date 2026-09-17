@@ -1,15 +1,17 @@
 token Id='<id>' Num='<num>';
-token Plus='+' Eq='=' Semi=';';
+token Plus='+' Minus='-' Star='*';
+token Eq='=' Semi=';' Comma=',' LParen='(' RParen=')';
 token Whitespace;
 
 skip Whitespace;
 
 start prog;
 
+// Star repetition: a program holds any number of statements.
 prog: stmt*;
 
-// Ordered choice: all three branches predict the same first token (Id), so a
-// failed branch must backtrack and re-lex the same input for the next branch.
+// Ordered choice: `decl` and `op_stmt` share the `Id Eq` prefix, so a failed
+// branch must backtrack and re-lex the input for the next one.
 stmt^:
   decl
 / op_stmt
@@ -20,5 +22,25 @@ stmt^:
 decl: Id Eq Id Semi;
 // `x = 1;`
 op_stmt: Id Eq Num Semi;
-// `x;` or `x + 1;`
-expr_stmt: Id [Plus Num] Semi;
+// `x;`, `x + 1;`, `f(x, y) * z - 1;`
+expr_stmt: expr Semi;
+
+// Left recursion: `a + b - c` groups as `(a + b) - c`.
+expr:
+  expr Plus term
+| expr Minus term
+| term
+;
+
+// Right recursion: `a * b * c` groups as `a * (b * c)`.
+term: factor [Star term];
+
+// Alternation, an optional call argument list, and parentheses.
+factor:
+  Num
+| Id [LParen [args] RParen]
+| LParen expr RParen
+;
+
+// Star repetition over a group: `a, b, c`.
+args: expr (Comma expr)*;
