@@ -165,6 +165,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "diff"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
+
+[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -403,6 +409,7 @@ dependencies = [
  "lsp-server",
  "lsp-types 0.91.1",
  "lsp-types 0.95.1",
+ "pretty_assertions",
  "rustc-hash",
  "serde",
  "serde_json",
@@ -416,6 +423,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "logos",
+ "pretty_assertions",
  "wasm-bindgen",
 ]
 
@@ -426,6 +434,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "logos",
+ "pretty_assertions",
  "rustc-hash",
  "wasm-bindgen",
 ]
@@ -446,6 +455,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "logos",
+ "pretty_assertions",
  "wasm-bindgen",
 ]
 
@@ -456,6 +466,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "logos",
+ "pretty_assertions",
  "wasm-bindgen",
 ]
 
@@ -466,6 +477,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "logos",
+ "pretty_assertions",
  "wasm-bindgen",
 ]
 
@@ -476,6 +488,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "logos",
+ "pretty_assertions",
  "wasm-bindgen",
 ]
 
@@ -485,6 +498,7 @@ version = "0.0.0"
 dependencies = [
  "codespan-reporting",
  "lelwel",
+ "pretty_assertions",
 ]
 
 [[package]]
@@ -494,6 +508,7 @@ dependencies = [
  "codespan-reporting",
  "herring",
  "lelwel",
+ "pretty_assertions",
  "wasm-bindgen",
 ]
 
@@ -504,6 +519,7 @@ dependencies = [
  "codespan-reporting",
  "herring",
  "lelwel",
+ "pretty_assertions",
  "wasm-bindgen",
 ]
 
@@ -514,6 +530,7 @@ dependencies = [
  "codespan-reporting",
  "lelwel",
  "logos",
+ "pretty_assertions",
  "rustc-hash",
  "wasm-bindgen",
 ]
@@ -632,6 +649,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0103b1cef7ec0cf76490e969665504990193874ea05c85ff9bab8b911d0a0564"
 dependencies = [
  "zerovec",
+]
+
+[[package]]
+name = "pretty_assertions"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
+dependencies = [
+ "diff",
+ "yansi",
 ]
 
 [[package]]
@@ -905,6 +932,12 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "yansi"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yoke"

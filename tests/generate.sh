@@ -14,6 +14,7 @@ use codespan_reporting::term::termcolor::NoColor;
 use codespan_reporting::term::{self, DisplayStyle};
 use lelwel::frontend::parser::Parser;
 use lelwel::frontend::sema::SemanticPass;
+use pretty_assertions::assert_eq;
 use std::io::BufWriter;
 
 fn gen_diags(input: &str) -> String {
@@ -52,10 +53,10 @@ EOF
   echo >> $output
   echo "$diag" | while read -r line ; do
     if [ ! -z "$line" ]; then
-      echo "    assert_eq!(lines.next(), Some(\"$line\"));" >> $output
+      echo "    assert_eq!(Some(\"$line\"), lines.next());" >> $output
     fi
   done
-  echo '    assert_eq!(lines.next(), None);' >> $output
+  echo '    assert_eq!(None, lines.next());' >> $output
   echo '}' >> $output
 done
 

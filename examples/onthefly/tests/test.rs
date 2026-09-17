@@ -1,4 +1,5 @@
 use lelwel_onthefly::{LexCall, Token, parse_with_log};
+use pretty_assertions::assert_eq;
 
 /// Every constant below is one of the sets the generated parser hands to
 /// `lex`. The canonical values come from
@@ -70,9 +71,9 @@ const ARGS_OPTIONAL: &[Token] = &[Token::Id, Token::LParen, Token::Num, Token::R
 /// the file name the set behind each entry.
 fn check(source: &str, tree: &str, diags: &str, calls: &[LexCall]) {
     let (res, log) = parse_with_log(source);
-    assert_eq!(&res[0], tree, "cst mismatch for {source:?}");
-    assert_eq!(&res[1], diags, "diagnostics mismatch for {source:?}");
-    assert_eq!(&log[..], calls, "lex sequence mismatch for {source:?}");
+    assert_eq!(tree, &res[0], "cst mismatch for {source:?}");
+    assert_eq!(diags, &res[1], "diagnostics mismatch for {source:?}");
+    assert_eq!(calls, &log[..], "lex sequence mismatch for {source:?}");
 }
 
 fn check_ok(source: &str, tree: &str, calls: &[LexCall]) {

@@ -16,3 +16,6 @@ rustc-hash = "2.1"
 
 [build-dependencies]
 lelwel = { path = "../.." }
+
+[dev-dependencies]
+pretty_assertions = "1.4"

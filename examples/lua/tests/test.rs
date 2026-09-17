@@ -1,16 +1,17 @@
 use lelwel_lua::generate_syntax_tree;
+use pretty_assertions::assert_eq;
 
 macro_rules! check {
     ($file:literal) => {
         let res =
             generate_syntax_tree(&include_str!(concat!("data/", $file, ".lua")).replace('\r', ""));
         assert_eq!(
-            format!("{}", res[0]),
-            include_str!(concat!("data/", $file, ".tree")).replace('\r', "")
+            include_str!(concat!("data/", $file, ".tree")).replace('\r', ""),
+            format!("{}", res[0])
         );
         assert_eq!(
-            format!("{}", res[1]),
-            include_str!(concat!("data/", $file, ".diag")).replace('\r', "")
+            include_str!(concat!("data/", $file, ".diag")).replace('\r', ""),
+            format!("{}", res[1])
         );
     };
 }

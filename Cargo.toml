@@ -27,6 +27,9 @@ serde_json = { version = "1.0", optional = true }
 dprint-core = { version = "0.67", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 
+[dev-dependencies]
+pretty_assertions = "1.4"
+
 [features]
 cli = ["clap", "dprint-core"]
 lsp = ["lsp-server", "codespan-lsp", "lsp-types", "lsp-types_old", "serde", "serde_json", "dprint-core"]

@@ -10,3 +10,6 @@ codespan-reporting = "0.13"
 
 [build-dependencies]
 lelwel = { path = "../.." }
+
+[dev-dependencies]
+pretty_assertions = "1.4"
