@@ -1,4 +1,4 @@
-use lelwel_onthefly::{LexCall, Token, parse_with_log};
+use lelwel_onthefly::{Token, parse_with_log};
 use pretty_assertions::assert_eq;
 
 /// Every constant below is one of the sets the generated parser hands to
@@ -57,6 +57,7 @@ const CALL_OPTIONAL: &[Token] = &[
 /// list.
 /// Canonical: predict([args]) = first(args) + RParen
 const ARGS_OPTIONAL: &[Token] = &[Token::Id, Token::LParen, Token::Num, Token::RParen];
+type LexCallCheck = (usize, Token, &'static [Token]);
 
 /// Asserts that parsing `source` with on-the-fly lexing produces exactly
 /// `tree` and the diagnostics `diags`, and that the lexer served exactly the
@@ -69,14 +70,26 @@ const ARGS_OPTIONAL: &[Token] = &[Token::Id, Token::LParen, Token::Num, Token::R
 /// carries the expected set the parser passed down, so the test pins the
 /// predict and follow sets the generator emits. The constants at the top of
 /// the file name the set behind each entry.
-fn check(source: &str, tree: &str, diags: &str, calls: &[LexCall]) {
+fn check(source: &str, tree: &str, diags: &str, calls: &[LexCallCheck]) {
     let (res, log) = parse_with_log(source);
     assert_eq!(tree, &res[0], "cst mismatch for {source:?}");
     assert_eq!(diags, &res[1], "diagnostics mismatch for {source:?}");
-    assert_eq!(calls, &log[..], "lex sequence mismatch for {source:?}");
+    assert_eq!(
+        &calls
+            .iter()
+            .copied()
+            .map(|(i, t, exp)| {
+                let mut exp = exp.to_owned();
+                exp.sort();
+                (i, t, exp)
+            })
+            .collect::<Vec<_>>(),
+        &log[..],
+        "lex sequence mismatch for {source:?}"
+    );
 }
 
-fn check_ok(source: &str, tree: &str, calls: &[LexCall]) {
+fn check_ok(source: &str, tree: &str, calls: &[LexCallCheck]) {
     check(source, tree, "", calls);
 }
 

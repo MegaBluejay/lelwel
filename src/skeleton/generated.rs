@@ -389,7 +389,7 @@ impl std::fmt::Debug for Rule {{
 
 macro_rules! expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current(&[Token::$token], $diags) {{
+        if let Token::$token = $self.current(&std::collections::HashSet::from_iter([Token::$token]), $diags) {{
             $self.advance(false, $diags);
         }} else {{
             $self.error($diags, err![$self, $msg]);
@@ -399,7 +399,7 @@ macro_rules! expect {{
 #[allow(unused_macros)]
 macro_rules! try_expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current(&[Token::$token], $diags) {{
+        if let Token::$token = $self.current(&std::collections::HashSet::from_iter([Token::$token]), $diags) {{
             $self.advance(false, $diags);
         }} else {{
             if $self.in_ordered_choice {{
@@ -449,7 +449,7 @@ impl<'a> Parser<'a> {{
         self.error_since_advance = true;
         diags.push(diag);
     }}
-    fn token(&mut self, expect: &'static [Token], diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
+    fn token(&mut self, expect: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
         if self.pos < self.tokens.len() {{
             return Some(self.tokens[self.pos])
         }}
@@ -461,7 +461,7 @@ impl<'a> Parser<'a> {{
 
         Some(token)
     }}
-    fn current(&mut self, expect: &'static [Token], diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {{
+    fn current(&mut self, expect: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {{
         if let Some(token) = self.current {{
             return token;
         }}
@@ -624,11 +624,11 @@ impl<'a> Parser<'a> {{
         rule(&mut self, diags);
 
         self.close_error_node(diags);
-        if self.current(&[], diags) != self.end_of_input {{
+        if self.current(&std::collections::HashSet::new(), diags) != self.end_of_input {{
             self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
             let error_tree = self.open(diags);
 
-            while let token = self.current(&[], diags) && token != self.end_of_input {{
+            while let token = self.current(&std::collections::HashSet::new(), diags) && token != self.end_of_input {{
                 self.advance(false, diags);
             }}
 
@@ -642,5 +642,5 @@ impl<'a> Parser<'a> {{
     }}
     /// Returns the CST for a parse of the start rule
     pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {{
-        self.parse_rule(|parser, diags| parser.rule_{2}(diags), diags, Rule::{3})
+        self.parse_rule(|parser, diags| parser.rule_{2}(&std::collections::HashSet::new(), diags), diags, Rule::{3})
     }}

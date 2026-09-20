@@ -71,7 +71,7 @@ fn lex_block_comment(lexer: &mut Lexer<'_, Token>) -> Result<(), LexerError> {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Logos, Debug, PartialEq, Copy, Clone)]
+#[derive(Logos, Debug, PartialEq, Eq, Copy, Clone, Hash)]
 #[logos(error = LexerError)]
 pub enum Token {
     EOF,

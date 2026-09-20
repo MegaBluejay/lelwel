@@ -33,6 +33,7 @@ pub struct TokenName<'a>(pub Cow<'a, str>);
 impl TokenName<'_> {
     const EOF: TokenName<'static> = TokenName(Cow::Borrowed("EOF"));
     const EPSILON: TokenName<'static> = TokenName(Cow::Borrowed("ɛ"));
+    const HOLE: TokenName<'static> = TokenName(Cow::Borrowed("hole"));
 }
 
 impl std::fmt::Debug for TokenName<'_> {
@@ -148,7 +149,9 @@ pub struct SemanticData<'a> {
     pub rule_bindings: BTreeMap<&'a str, Vec<NodeRef>>,
     pub first_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
     pub follow_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
+    pub open_follow: FxHashSet<NodeRef>,
     pub predict_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
+    pub open_predict: FxHashSet<NodeRef>,
     pub recovery_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
     pub left_rec_local_follow_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
     pub used: FxHashSet<NodeRef>,
@@ -949,6 +952,7 @@ impl<'a> LL1Validator {
             Self::calc_first(cst, sema, file);
             Self::calc_follow(cst, sema, file);
             Self::calc_predict(sema);
+            Self::strip_holes(sema);
             Self::check(cst, sema, diags, file);
         }
     }
@@ -1136,15 +1140,34 @@ impl<'a> LL1Validator {
                 }
             }
         }
-        // Iterates until there are no more changes in the follow sets
-        let mut change = true;
-        while change {
-            change = false;
-            for rule in file.rule_decls(cst) {
-                if let Some(regex) = rule.regex(cst) {
-                    sema.follow_sets.entry(regex.syntax()).or_default();
+
+        for rule in file.rule_decls(cst) {
+            if let Some(regex) = rule.regex(cst) {
+                let mut change = true;
+                sema.follow_sets
+                    .entry(regex.syntax())
+                    .or_default()
+                    .insert(TokenName::HOLE);
+                while change {
+                    change = false;
                     Self::calc_follow_regex(cst, sema, regex, regex, &mut change);
                 }
+            }
+        }
+    }
+
+    /// Removes the rule-tail placeholder from the follow and predict sets and
+    /// records on which nodes it was present. A node whose set is open needs
+    /// the rule's runtime follow set added at the call site.
+    fn strip_holes(sema: &mut SemanticData<'a>) {
+        for (node, follow) in &mut sema.follow_sets {
+            if follow.remove(&TokenName::HOLE) {
+                sema.open_follow.insert(*node);
+            }
+        }
+        for (node, predict) in &mut sema.predict_sets {
+            if predict.remove(&TokenName::HOLE) {
+                sema.open_predict.insert(*node);
             }
         }
     }
@@ -1173,14 +1196,15 @@ impl<'a> LL1Validator {
                         .left_rec_local_follow_sets
                         .entry(name_rule_regex.syntax())
                         .or_default();
-                    if rule_regex != name_rule_regex {
+                    if rule_regex == name_rule_regex {
+                        sema.follow_sets
+                            .get_mut(&name_rule_regex.syntax())
+                            .unwrap()
+                            .extend(follow);
+                        *change |= size != sema.follow_sets[&name_rule_regex.syntax()].len();
+                    } else {
                         left_rec_local_follow.extend(follow.clone());
                     }
-                    sema.follow_sets
-                        .get_mut(&name_rule_regex.syntax())
-                        .unwrap()
-                        .extend(follow);
-                    *change |= size != sema.follow_sets[&name_rule_regex.syntax()].len();
                 }
             }
             Regex::Concat(concat) => {
