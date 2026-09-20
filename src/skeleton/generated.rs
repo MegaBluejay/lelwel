@@ -1,9 +1,3 @@
-macro_rules! err {{
-    [$self:expr, $msg:literal] => {{
-        $self.create_diagnostic($self.span(), String::from($msg))
-    }}
-}}
-
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum Rule {{{0}
@@ -392,7 +386,7 @@ macro_rules! expect {{
         if let Token::$token = $self.current(&std::collections::HashSet::from_iter([Token::$token]), $diags) {{
             $self.advance(false, $diags);
         }} else {{
-            $self.error($diags, err![$self, $msg]);
+            $self.error($diags, $msg);
         }}
     }};
 }}
@@ -405,7 +399,7 @@ macro_rules! try_expect {{
             if $self.in_ordered_choice {{
                 return None;
             }}
-            $self.error($diags, err![$self, $msg]);
+            $self.error($diags, $msg);
         }}
     }};
 }}
@@ -433,6 +427,35 @@ pub struct Parser<'a> {{
     error_since_advance: bool,
     state: <Self as ParserCallbacks<'a>>::State,
 }}
+
+#[allow(dead_code)]
+fn expected_message(expected: &std::collections::HashSet<Token>) -> String {{
+    let symbols: Vec<&str> = TOKEN_SYMBOLS
+        .iter()
+        .filter_map(|(token, symbol)| expected.contains(token).then_some(*symbol))
+        .collect();
+    let mut message = if symbols.is_empty() {{
+        "invalid syntax".to_string()
+    }} else if symbols.len() == 1 {{
+        "invalid syntax, expected: ".to_string()
+    }} else {{
+        "invalid syntax, expected one of: ".to_string()
+    }};
+    for (i, symbol) in symbols.iter().enumerate() {{
+        if i > 0 {{
+            message.push_str(", ");
+        }}
+        if symbol.starts_with('<') && symbol.ends_with('>') && symbol.len() > 2 {{
+            message.push_str(symbol);
+        }} else {{
+            message.push('\'');
+            message.push_str(symbol);
+            message.push('\'');
+        }}
+    }}
+    message
+}}
+
 #[allow(clippy::while_let_loop, dead_code, unused_parens)]
 impl<'a> Parser<'a> {{
     fn active_error(&self) -> bool {{
@@ -441,13 +464,13 @@ impl<'a> Parser<'a> {{
     fn error(
         &mut self,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-        diag: <Self as ParserCallbacks<'a>>::Diagnostic
+        message: impl Into<String>
     ) {{
         if self.active_error() {{
             return;
         }}
         self.error_since_advance = true;
-        diags.push(diag);
+        diags.push(self.create_diagnostic(self.span(), message.into()));
     }}
     fn token(&mut self, expect: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
         if self.pos < self.tokens.len() {{
@@ -498,9 +521,9 @@ impl<'a> Parser<'a> {{
     fn advance_with_error(
         &mut self,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-        diag: <Self as ParserCallbacks<'a>>::Diagnostic
+        message: impl Into<String>
     ) {{
-        self.error(diags, diag);
+        self.error(diags, message);
         if self.error_node.is_none() {{
             self.error_node = Some(self.cst.data.open());
         }}
@@ -625,7 +648,7 @@ impl<'a> Parser<'a> {{
 
         self.close_error_node(diags);
         if self.current(&std::collections::HashSet::new(), diags) != self.end_of_input {{
-            self.error(diags, err![self, "invalid syntax, expected: <end of file>"]);
+            self.error(diags, "invalid syntax, expected: <end of file>");
             let error_tree = self.open(diags);
 
             while let token = self.current(&std::collections::HashSet::new(), diags) && token != self.end_of_input {{

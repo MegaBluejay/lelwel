@@ -59,7 +59,6 @@ impl Indent for String {
 
 trait Generator {
     fn pattern(&self, level: usize) -> String;
-    fn error(&self, token_symbols: &FxHashMap<&str, &str>) -> String;
     fn set(&self, open: bool) -> String;
     fn recover(&self) -> String;
 }
@@ -68,20 +67,6 @@ impl Generator for std::collections::BTreeSet<TokenName<'_>> {
     fn pattern(&self, level: usize) -> String {
         let symbols: Vec<_> = self.iter().map(|s| format!("Token::{}", s.0)).collect();
         symbols.join(&format!("\n{}| ", "    ".repeat(level)))
-    }
-    fn error(&self, token_symbols: &FxHashMap<&str, &str>) -> String {
-        let expected = self
-            .iter()
-            .filter_map(|s| token_symbols.get(s.0.as_ref()))
-            .map(|sym| {
-                if sym.starts_with('<') && sym.ends_with('>') && sym.len() > 2 {
-                    sym.to_string()
-                } else {
-                    format!("'{}'", sym)
-                }
-            })
-            .collect::<Vec<_>>();
-        syntax_error_message(&expected)
     }
     fn set(&self, open: bool) -> String {
         let symbols: Vec<_> = self.iter().map(|s| format!("Token::{}", s.0)).collect();
@@ -445,7 +430,6 @@ impl RustOutput {
         cst: &Cst<'_>,
         sema: &SemanticData<'_>,
         output: &mut BufWriter<std::fs::File>,
-        token_symbols: &FxHashMap<&str, &str>,
         has_rule_rename: bool,
         has_rule_creation: bool,
         name: &str,
@@ -463,7 +447,6 @@ impl RustOutput {
             regex,
             output,
             2,
-            token_symbols,
             false,
             name,
             elision,
@@ -478,7 +461,6 @@ impl RustOutput {
         cst: &Cst<'_>,
         sema: &SemanticData<'_>,
         output: &mut BufWriter<std::fs::File>,
-        token_symbols: &FxHashMap<&str, &str>,
         has_rule_rename: bool,
         name: &str,
         regex: Regex,
@@ -529,7 +511,7 @@ impl RustOutput {
         let set =
             sema.predict_sets[&regex.syntax()].set(sema.open_predict.contains(&regex.syntax()));
         output.write_all(
-            format!("match parser.current({set}, diags) {{\n")
+            format!("let expected = {set};\nmatch parser.current(expected, diags) {{\n")
                 .indent(3)
                 .as_bytes(),
         )?;
@@ -585,7 +567,6 @@ impl RustOutput {
                             concat_op,
                             output,
                             5,
-                            token_symbols,
                             false,
                             name,
                             elision,
@@ -601,7 +582,6 @@ impl RustOutput {
                     alt_op,
                     output,
                     5,
-                    token_symbols,
                     false,
                     name,
                     elision,
@@ -617,7 +597,7 @@ impl RustOutput {
             output.write_all(
                 format!(
                     "    {} => {{\
-                   \n        parser.advance_with_error(diags, err![parser, {}]);\
+                   \n        parser.advance_with_error(diags, {});\
                    \n    }}\n",
                     advance_error_set.pattern(0),
                     syntax_error_message(&[])
@@ -629,10 +609,9 @@ impl RustOutput {
         output.write_all(
             format!(
                 "    _ => {{\
-               \n        parser.error(diags, err![parser, {}]);\
+               \n        parser.error(diags, expected_message(expected));\
                \n    }}\
                \n}}\n",
-                sema.predict_sets[&regex.syntax()].error(token_symbols)
             )
             .indent(3)
             .as_bytes(),
@@ -711,7 +690,6 @@ impl RustOutput {
                         concat_op,
                         output,
                         6,
-                        token_symbols,
                         false,
                         name,
                         RuleNodeElision::None,
@@ -769,7 +747,6 @@ impl RustOutput {
         sema: &SemanticData<'_>,
         rule: RuleDecl,
         output: &mut BufWriter<std::fs::File>,
-        token_symbols: &FxHashMap<&str, &str>,
     ) -> std::io::Result<()> {
         if !sema.used.contains(&rule.syntax()) {
             // don't generate code for unused rules
@@ -812,7 +789,6 @@ impl RustOutput {
                     cst,
                     sema,
                     output,
-                    token_symbols,
                     has_rule_rename,
                     name,
                     regex,
@@ -824,7 +800,6 @@ impl RustOutput {
                     cst,
                     sema,
                     output,
-                    token_symbols,
                     has_rule_rename,
                     has_rule_creation,
                     name,
@@ -897,7 +872,6 @@ impl RustOutput {
         regex: Regex,
         output: &mut BufWriter<std::fs::File>,
         level: usize,
-        token_symbols: &FxHashMap<&str, &str>,
         open_before: bool,
         rule_name: &str,
         rule_elision: RuleNodeElision,
@@ -920,8 +894,8 @@ impl RustOutput {
         });
         output.write_all(
             format!(
-                "loop {{\
-               \n    match {parser_name}.current({set}, diags) {{\
+                "let expected = {set};\nloop {{\
+               \n    match {parser_name}.current(expected, diags) {{\
                \n        {}{} => {{\n",
                 sema.first_sets[&op.syntax()].pattern(2),
                 Self::get_predicate(cst, rule_name, op, parser_name)
@@ -946,7 +920,6 @@ impl RustOutput {
             op,
             output,
             level + 3,
-            token_symbols,
             false,
             rule_name,
             rule_elision,
@@ -957,11 +930,10 @@ impl RustOutput {
         let ordered_choice_return = ordered_choice_return.indent(3);
         let follow =
             sema.follow_sets[&regex.syntax()].set(sema.open_follow.contains(&regex.syntax()));
-        let expected = expected.error(token_symbols);
         let recovery = sema.recovery_sets[&regex.syntax()].recover();
         let recovery = format!(
             "\n        c if ({recovery}).contains(&c) => {{{ordered_choice_return}\
-             \n            {parser_name}.error(diags, err![{parser_name}, {expected}]);\
+             \n            {parser_name}.error(diags, expected_message(expected));\
              \n            break;\
              \n        }}"
         );
@@ -973,7 +945,7 @@ impl RustOutput {
                 "        }}\
                \n        c if ({follow}).contains(&c) => break,{recovery}\
                \n        _ => {{{ordered_choice_return}\
-               \n            {parser_name}.advance_with_error(diags, err![{parser_name}, {expected}]);\
+               \n            {parser_name}.advance_with_error(diags, expected_message(expected));\
                \n        }}\
                \n    }}\
                \n}}\n",
@@ -990,7 +962,6 @@ impl RustOutput {
         regex: Regex,
         output: &mut BufWriter<std::fs::File>,
         level: usize,
-        token_symbols: &FxHashMap<&str, &str>,
         open_before: bool,
         rule_name: &str,
         rule_elision: RuleNodeElision,
@@ -1117,7 +1088,6 @@ impl RustOutput {
                         *op,
                         output,
                         level + 3,
-                        token_symbols,
                         false,
                         rule_name,
                         rule_elision,
@@ -1162,7 +1132,7 @@ impl RustOutput {
                 if predict.is_empty() && !open {
                     output.write_all(
                         format!(
-                            "{parser_name}.advance_with_error(diags, err![{parser_name}, {}]);\n",
+                            "{parser_name}.advance_with_error(diags, {});\n",
                             syntax_error_message(&[])
                         )
                         .indent(level + 2)
@@ -1199,7 +1169,6 @@ impl RustOutput {
                         op,
                         output,
                         level + 2,
-                        token_symbols,
                         false,
                         rule_name,
                         rule_elision,
@@ -1209,7 +1178,7 @@ impl RustOutput {
                     output.write_all("} else {\n".indent(level + 1).as_bytes())?;
                     output.write_all(
                         format!(
-                            "{parser_name}.advance_with_error(diags, err![{parser_name}, {}]);\n",
+                            "{parser_name}.advance_with_error(diags, {});\n",
                             syntax_error_message(&[])
                         )
                         .indent(level + 2)
@@ -1227,7 +1196,6 @@ impl RustOutput {
                         op,
                         output,
                         level,
-                        token_symbols,
                         false,
                         rule_name,
                         rule_elision,
@@ -1240,7 +1208,7 @@ impl RustOutput {
                 let set = sema.predict_sets[&regex.syntax()]
                     .set(sema.open_predict.contains(&regex.syntax()));
                 output.write_all(
-                    format!("match {parser_name}.current({set}, diags) {{\n")
+                    format!("let expected = {set};\nmatch {parser_name}.current(expected, diags) {{\n")
                         .indent(level)
                         .as_bytes(),
                 )?;
@@ -1267,7 +1235,6 @@ impl RustOutput {
                         op,
                         output,
                         level + 2,
-                        token_symbols,
                         false,
                         rule_name,
                         rule_elision,
@@ -1280,7 +1247,7 @@ impl RustOutput {
                     output.write_all(
                         format!(
                             "    {} => {{{}\
-                           \n        {parser_name}.advance_with_error(diags, err![{parser_name}, {}]);\
+                           \n        {parser_name}.advance_with_error(diags, {});\
                            \n    }}\n",
                             advance_error_set.pattern(0),
                             ordered_choice_return.indent(2),
@@ -1293,11 +1260,10 @@ impl RustOutput {
                 output.write_all(
                     format!(
                         "    _ => {{{}\
-                       \n        {parser_name}.error(diags, err![{parser_name}, {}]);\
+                       \n        {parser_name}.error(diags, expected_message(expected));\
                        \n    }}\
                        \n}}\n",
                         ordered_choice_return.indent(2),
-                        sema.predict_sets[&regex.syntax()].error(token_symbols),
                     )
                     .indent(level)
                     .as_bytes(),
@@ -1310,7 +1276,6 @@ impl RustOutput {
                     regex,
                     output,
                     level,
-                    token_symbols,
                     open_before,
                     rule_name,
                     rule_elision,
@@ -1329,7 +1294,6 @@ impl RustOutput {
                     op,
                     output,
                     level,
-                    token_symbols,
                     false,
                     rule_name,
                     rule_elision,
@@ -1342,7 +1306,6 @@ impl RustOutput {
                     regex,
                     output,
                     level,
-                    token_symbols,
                     open_before,
                     rule_name,
                     rule_elision,
@@ -1360,7 +1323,6 @@ impl RustOutput {
                     regex,
                     output,
                     level,
-                    token_symbols,
                     open_before,
                     rule_name,
                     rule_elision,
@@ -1379,7 +1341,6 @@ impl RustOutput {
                         inner,
                         output,
                         level,
-                        token_symbols,
                         false,
                         rule_name,
                         rule_elision,
@@ -1613,9 +1574,32 @@ impl RustOutput {
             Self::output_parts(cst, *rule, output)?;
         }
         for rule in file.rule_decls(cst) {
-            Self::output_rule(cst, sema, rule, output, &token_symbols)?;
+            Self::output_rule(cst, sema, rule, output)?;
         }
         output.write_all(b"}\n\n")?;
+
+        // Runtime token symbols and message builder, in token-name order so
+        // the generated messages are deterministic.
+        let mut symbols: Vec<(String, String)> = token_symbols
+            .iter()
+            .map(|(name, symbol)| (name.to_string(), symbol.to_string()))
+            .collect();
+        for part in sema.parts.iter() {
+            let name = part.name(cst).unwrap().0;
+            symbols.push((
+                format!("EOF{}", snake_to_pascal_case(name)),
+                "<end of file>".to_string(),
+            ));
+        }
+        symbols.sort();
+        let mut token_symbols_output = String::new();
+        token_symbols_output
+            .push_str("#[allow(dead_code)]\nconst TOKEN_SYMBOLS: &[(Token, &str)] = &[\n");
+        for (name, symbol) in &symbols {
+            token_symbols_output.push_str(&format!("    (Token::{name}, {symbol:?}),\n"));
+        }
+        token_symbols_output.push_str("];\n\n");
+        output.write_all(token_symbols_output.as_bytes())?;
 
         Self::output_parser_callbacks(output, sema, true, rule_names)
     }
