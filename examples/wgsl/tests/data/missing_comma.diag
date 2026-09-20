@@ -1,4 +1,4 @@
-error: invalid syntax, expected one of: ',', '}'
+error: invalid syntax, expected one of: ',', '<', '}'
   ┌─ <input>:3:3
   │
 3 │   b: u32,

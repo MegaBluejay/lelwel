@@ -2,61 +2,52 @@ use lelwel_onthefly::{Token, parse_with_log};
 use pretty_assertions::assert_eq;
 
 /// Every constant below is one of the sets the generated parser hands to
-/// `lex`. The canonical values come from
-/// `llw -v examples/onthefly/src/onthefly.llw`; the comment on each one names
-/// the node whose set it is and the call site that passes it down.
-///
-/// These are grammar-wide sets, not the tokens that are valid at the call
-/// site. `follow(factor)` for example is the union over every call site of
-/// `factor`, because the semantic pass takes the fixpoint over all rule
-/// references, so it also contains what follows a `factor` inside a call
-/// argument list. The parser builds its `expected one of: ...` diagnostics
-/// from the same sets, so the lexer and the diagnostics agree; both can name
-/// a token that no valid parse allows at that point. Input `x` reports `,`
-/// and `)` for that reason.
+/// `lex`. The parser threads the follow set of each rule down through its
+/// call graph, so a set is the locally expected tokens plus, where the
+/// construct sits at the end of a rule, whatever follows the enclosing rule.
+/// The same threaded set backs the `expected one of: ...` diagnostics, so the
+/// lexer and the diagnostics agree.
 
 /// Follow set of `stmt`, passed down by the loop of `prog: stmt*`.
-/// Canonical: follow(stmt) = {EOF, Id, LParen, Num}
-const STMT_FOLLOW: &[Token] = &[Token::EOF, Token::Id, Token::LParen, Token::Num];
+/// follow(stmt) = {EOF, Id, Num, LParen}
+const STMT_FOLLOW: &[Token] = &[Token::EOF, Token::Id, Token::Num, Token::LParen];
 
 /// First set of `expr`, `term`, and `factor`, which is the same for all three.
 /// The left recursive dispatch of `expr`, the alternation dispatch of
 /// `factor`, and the mandatory operand after `(`, `,`, `+`, and `-` all pass it
 /// down.
-/// Canonical: first(expr) = first(term) = first(factor) = {Id, LParen, Num}
-const FIRST_OPERAND: &[Token] = &[Token::Id, Token::LParen, Token::Num];
+/// first(expr) = first(term) = first(factor) = {Id, Num, LParen}
+const FIRST_OPERAND: &[Token] = &[Token::Id, Token::Num, Token::LParen];
 
-/// Predict set of the `[Star term]` optional of `term`, passed down by the
-/// optional's loop. It is `Star` plus the follow set of `term`.
-/// Canonical: predict([Star term]) = follow(factor)
-const TERM_OPTIONAL: &[Token] = &[
-    Token::Comma,
-    Token::Minus,
-    Token::Plus,
-    Token::RParen,
-    Token::Semi,
-    Token::Star,
-];
+/// Predict set of the `[Star term]` optional of `term` in the top-level
+/// `expr_stmt` context: `Star` plus `follow(term) = {Plus, Minus, Semi}`.
+const TERM_OPTIONAL: &[Token] = &[Token::Plus, Token::Minus, Token::Star, Token::Semi];
 
-/// Predict set of the `[LParen [args] RParen]` optional of `factor`, passed
-/// down by the optional's loop after an `Id`. It adds the `(` that starts a
-/// call to the follow set of `factor`.
-/// Canonical: predict([LParen [args] RParen]) = follow(factor) + LParen
-const CALL_OPTIONAL: &[Token] = &[
-    Token::Comma,
-    Token::LParen,
-    Token::Minus,
-    Token::Plus,
-    Token::RParen,
-    Token::Semi,
-    Token::Star,
-];
+/// The same optional inside a parenthesized expression, where
+/// `follow(term) = {Plus, Minus, RParen}`.
+const TERM_OPTIONAL_PAREN: &[Token] = &[Token::Plus, Token::Minus, Token::Star, Token::RParen];
+
+/// Predict set of the `[LParen [args] RParen]` optional of `factor` in the
+/// top-level `expr_stmt` context: the `(` that starts a call plus
+/// `follow(factor) = {Plus, Minus, Star, Semi}`.
+const CALL_OPTIONAL: &[Token] =
+    &[Token::Plus, Token::Minus, Token::Star, Token::Semi, Token::LParen];
+
+/// The same optional inside a parenthesized expression, where
+/// `follow(factor) = {Plus, Minus, Star, RParen}`.
+const CALL_OPTIONAL_PAREN: &[Token] =
+    &[Token::Plus, Token::Minus, Token::Star, Token::RParen, Token::LParen];
+
+/// The same optional inside a call argument list, where
+/// `follow(factor) = {Plus, Minus, Star, Comma, RParen}`.
+const CALL_OPTIONAL_ARGS: &[Token] =
+    &[Token::Plus, Token::Minus, Token::Star, Token::Comma, Token::LParen, Token::RParen];
 
 /// Predict set of the `[args]` optional inside a call list, passed down by the
 /// inner optional. It is the first set of `args` plus the `)` that closes the
 /// list.
-/// Canonical: predict([args]) = first(args) + RParen
-const ARGS_OPTIONAL: &[Token] = &[Token::Id, Token::LParen, Token::Num, Token::RParen];
+/// predict([args]) = first(args) + RParen
+const ARGS_OPTIONAL: &[Token] = &[Token::Id, Token::Num, Token::LParen, Token::RParen];
 type LexCallCheck = (usize, Token, &'static [Token]);
 
 /// Asserts that parsing `source` with on-the-fly lexing produces exactly
@@ -157,8 +148,8 @@ fn rollback_op_stmt() {
 
 // `decl` and `op_stmt` both fail, so `expr_stmt` wins on the third try. Its
 // `expr` rule is left recursive, so the tokens after the first operand are
-// lexed with the follow set of `expr`, which lists every operator and every
-// token that can end an expression.
+// lexed with the follow set threaded into `expr` at this call site: every
+// operator and the `;` that ends the statement.
 #[test]
 fn rollback_expr_stmt() {
     check_ok(
@@ -401,19 +392,19 @@ fn parse_error_recovery() {
                     Num "2" [10..11]
 "#,
         "\
-error: invalid syntax, expected one of: ',', '(', '-', '+', ')', ';', '*'
+error: invalid syntax, expected one of: '(', '-', '+', ';', '*'
   \u{250c}\u{2500} <input>:1:3
   \u{2502}
 1 \u{2502} a = 1 b + 2
   \u{2502}   ^
 
-error: invalid syntax, expected one of: ',', '-', '+', ')', ';', '*'
+error: invalid syntax, expected one of: '-', '+', ';', '*'
   \u{250c}\u{2500} <input>:1:7
   \u{2502}
 1 \u{2502} a = 1 b + 2
   \u{2502}       ^
 
-error: invalid syntax, expected one of: ',', '-', '+', ')', ';', '*'
+error: invalid syntax, expected one of: '-', '+', ';', '*'
   \u{250c}\u{2500} <input>:1:12
   \u{2502}
 1 \u{2502} a = 1 b + 2
@@ -455,12 +446,12 @@ error: invalid syntax, expected one of: ',', '-', '+', ')', ';', '*'
 // matches on the follow set of `expr`. The CST nests to the left, so
 // `a + b - c` groups as `(a + b) - c`.
 //
-// The follow set of `expr` is `{Comma, Minus, Plus, RParen, Semi}` and the
+// The follow set threaded into `expr` here is `{Plus, Minus, Semi}` and the
 // generated loop does pass it to `current`. It never reaches `lex` though:
 // the loop only runs after `term`, and `term` always ends by checking its own
 // optional, which leaves one token cached. The operators below are therefore
-// lexed by `CALL_OPTIONAL` in the preceding `factor`, which is a superset that
-// also allows `(` and `*`.
+// lexed by `CALL_OPTIONAL` in the preceding `factor`, which also allows `(`
+// and `*`.
 #[test]
 fn left_recursion() {
     check_ok(
@@ -553,9 +544,9 @@ fn right_recursion() {
 }
 
 // `*` binds tighter than `+` because the left recursion in `expr` only looks
-// for `+` and `-`, while `term` consumes `*`. The token after `b` is checked
-// against the follow set of `expr`, which still lists `Star` even though the
-// left recursive loop never matches it.
+// for `+` and `-`, while `term` consumes `*`. The `*` after `b` is lexed by
+// `CALL_OPTIONAL` in the preceding `factor`, which allows it, and is then
+// consumed by the `[Star term]` optional of `term`.
 #[test]
 fn mixed_precedence() {
     check_ok(
@@ -636,11 +627,11 @@ fn parenthesized_operand() {
         &[
             (0, Token::LParen, STMT_FOLLOW),
             (1, Token::Id, FIRST_OPERAND),
-            (2, Token::Whitespace, CALL_OPTIONAL),
-            (3, Token::Plus, CALL_OPTIONAL),
+            (2, Token::Whitespace, CALL_OPTIONAL_PAREN),
+            (3, Token::Plus, CALL_OPTIONAL_PAREN),
             (4, Token::Whitespace, FIRST_OPERAND),
             (5, Token::Num, FIRST_OPERAND),
-            (6, Token::RParen, TERM_OPTIONAL),
+            (6, Token::RParen, TERM_OPTIONAL_PAREN),
             (7, Token::Whitespace, TERM_OPTIONAL),
             (8, Token::Star, TERM_OPTIONAL),
             (9, Token::Whitespace, FIRST_OPERAND),
@@ -685,10 +676,10 @@ fn call_with_arguments() {
             (1, Token::LParen, &[Token::Eq]), // `op_stmt` attempt
             (1, Token::LParen, CALL_OPTIONAL),
             (2, Token::Id, ARGS_OPTIONAL),
-            (3, Token::Comma, CALL_OPTIONAL),
+            (3, Token::Comma, CALL_OPTIONAL_ARGS),
             (4, Token::Whitespace, FIRST_OPERAND),
             (5, Token::Id, FIRST_OPERAND),
-            (6, Token::RParen, CALL_OPTIONAL),
+            (6, Token::RParen, CALL_OPTIONAL_ARGS),
             (7, Token::Semi, TERM_OPTIONAL),
         ],
     );
@@ -724,7 +715,8 @@ fn call_without_arguments() {
 
 // A star repetition over the group `(Comma expr)`. Each `,` is lexed by the
 // optional tail of the preceding `factor`, so it arrives with the follow set
-// of `expr` rather than with the narrower follow set of `args`.
+// threaded into `factor` at that call site, which inside an argument list is
+// `{Plus, Minus, Star, Comma, RParen}`.
 #[test]
 fn repeated_arguments() {
     check_ok(
@@ -762,13 +754,13 @@ fn repeated_arguments() {
             (1, Token::LParen, &[Token::Eq]), // `op_stmt` attempt
             (1, Token::LParen, CALL_OPTIONAL),
             (2, Token::Id, ARGS_OPTIONAL),
-            (3, Token::Comma, CALL_OPTIONAL),
+            (3, Token::Comma, CALL_OPTIONAL_ARGS),
             (4, Token::Whitespace, FIRST_OPERAND),
             (5, Token::Id, FIRST_OPERAND),
-            (6, Token::Comma, CALL_OPTIONAL),
+            (6, Token::Comma, CALL_OPTIONAL_ARGS),
             (7, Token::Whitespace, FIRST_OPERAND),
             (8, Token::Id, FIRST_OPERAND),
-            (9, Token::RParen, CALL_OPTIONAL),
+            (9, Token::RParen, CALL_OPTIONAL_ARGS),
             (10, Token::Semi, TERM_OPTIONAL),
         ],
     );
