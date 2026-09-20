@@ -1570,6 +1570,9 @@ impl UsageValidator {
             for token in sema.skipped.iter() {
                 sema.used.insert(token.syntax());
             }
+            for part in sema.parts.iter() {
+                sema.used.insert(part.syntax());
+            }
             let mut change = true;
             while change {
                 let count = sema.used.len();
@@ -1649,178 +1652,77 @@ impl UsageValidator {
 }
 
 #[derive(Default)]
-struct RecoverySetGenerator {
-    dom: FxHashMap<Regex, FxHashSet<Regex>>,
-    pred: FxHashMap<Regex, FxHashSet<Regex>>,
-}
+struct RecoverySetGenerator;
 impl RecoverySetGenerator {
     fn new() -> Self {
-        Self::default()
+        Self
     }
-    fn run(&mut self, cst: &Cst<'_>, sema: &mut SemanticData<'_>) {
-        let file = if let Some(file) = File::cast(cst, NodeRef::ROOT) {
-            file
-        } else {
+    /// Computes the in-rule part of the recovery set for every loop and
+    /// optional: the union of the follows of its ancestors within the same
+    /// rule, minus the tokens the construct itself handles. The cross-rule
+    /// part is the `recover` set threaded through the generated parser.
+    fn run<'a>(&mut self, cst: &Cst<'_>, sema: &mut SemanticData<'a>) {
+        let Some(file) = File::cast(cst, NodeRef::ROOT) else {
             return;
         };
-
-        let start = if let Some(start_regex) = sema.start_rule.and_then(|start| start.regex(cst)) {
-            start_regex
-        } else {
-            return;
-        };
-
-        // part nodes get start node as predecessor if they are unused
-        for part in sema.parts.iter() {
-            if !sema.used.contains(&part.syntax()) {
-                sema.used.insert(part.syntax());
-                let Some(part_regex) = part.regex(cst) else {
-                    continue;
-                };
-                self.add_pred(part_regex, start);
-            }
-        }
         for rule in file.rule_decls(cst) {
-            if sema.used.contains(&rule.syntax())
-                && let Some(regex) = rule.regex(cst)
-            {
-                self.set_regex_pred(cst, sema, regex);
-            }
-        }
-
-        let nodes_no_start: FxHashSet<_> = self.pred.keys().copied().collect();
-        let mut nodes = nodes_no_start.clone();
-        nodes.insert(start);
-
-        // start node dominates itself
-        self.dom.insert(start, FxHashSet::from_iter([start]));
-        // other nodes are initialized with all nodes as dominators
-        for regex in nodes_no_start.iter() {
-            self.dom.insert(*regex, nodes.clone());
-        }
-        // iteratively eliminate nodes that are not dominators
-        let mut change = true;
-        while change {
-            change = false;
-            for regex in nodes_no_start.iter() {
-                let mut pred = self.pred[regex].iter();
-                if let Some(p) = pred.next() {
-                    let mut dom = self.dom[p].clone();
-                    for p in pred {
-                        dom = dom.intersection(&self.dom[p]).copied().collect();
-                    }
-                    dom.insert(*regex);
-                    change |= dom.len() != self.dom[regex].len();
-                    if change {
-                        self.dom.insert(*regex, dom);
-                    }
-                } else {
-                    self.dom.insert(*regex, FxHashSet::from_iter([*regex]));
-                }
-            }
-        }
-
-        // calculate recovery set for loops
-        if let Regex::Star(_) | Regex::Plus(_) | Regex::Optional(_) = start {
-            sema.recovery_sets.entry(start.syntax()).or_default();
-        }
-        for regex in nodes_no_start.iter() {
-            let op = if let Regex::Star(star) = regex {
-                star.operand(cst).unwrap()
-            } else if let Regex::Plus(plus) = regex {
-                plus.operand(cst).unwrap()
-            } else if let Regex::Optional(opt) = regex {
-                opt.operand(cst).unwrap()
-            } else {
-                continue;
-            };
-            let op_first = &sema.first_sets[&op.syntax()];
-            let op_follow = &sema.follow_sets[&op.syntax()];
-            for dom in self.dom[regex].iter() {
-                let dom_follow = &sema.follow_sets[&dom.syntax()];
-                sema.recovery_sets
-                    .entry(regex.syntax())
-                    .or_default()
-                    .extend(dom_follow.clone());
-            }
-            for sym in op_first.iter() {
-                sema.recovery_sets
-                    .entry(regex.syntax())
-                    .or_default()
-                    .remove(sym);
-            }
-            for sym in op_follow.iter() {
-                sema.recovery_sets
-                    .entry(regex.syntax())
-                    .or_default()
-                    .remove(sym);
+            if let Some(regex) = rule.regex(cst) {
+                self.walk(cst, sema, regex, &BTreeSet::new());
             }
         }
     }
-
-    fn add_pred(&mut self, r: Regex, p: Regex) {
-        if let Some(pred) = self.pred.get_mut(&r) {
-            pred.insert(p);
-        } else {
-            self.pred.insert(r, FxHashSet::from_iter([p]));
+    fn walk<'a>(
+        &self,
+        cst: &Cst<'_>,
+        sema: &mut SemanticData<'a>,
+        regex: Regex,
+        ancestors: &BTreeSet<TokenName<'a>>,
+    ) {
+        let mut follow = ancestors.clone();
+        if let Some(ancestor_follow) = sema.follow_sets.get(&regex.syntax()) {
+            follow.extend(ancestor_follow.iter().cloned());
         }
-    }
-
-    fn set_regex_pred(&mut self, cst: &Cst<'_>, sema: &SemanticData<'_>, regex: Regex) {
         match regex {
-            Regex::Name(name) => {
-                if let Some(rule_regex) = sema
-                    .decl_bindings
-                    .get(&name.syntax())
-                    .and_then(|n| RuleDecl::cast(cst, *n))
-                    .and_then(|rule| rule.regex(cst))
-                {
-                    self.add_pred(rule_regex, regex);
-                }
-            }
-            Regex::Concat(concat) => {
-                for op in concat.operands(cst) {
-                    self.add_pred(op, regex);
-                    self.set_regex_pred(cst, sema, op);
-                }
-            }
-            Regex::OrderedChoice(choice) => {
-                for op in choice.operands(cst) {
-                    self.add_pred(op, regex);
-                    self.set_regex_pred(cst, sema, op);
-                }
-            }
-            Regex::Alternation(alt) => {
-                for op in alt.operands(cst) {
-                    self.add_pred(op, regex);
-                    self.set_regex_pred(cst, sema, op);
-                }
-            }
             Regex::Star(star) => {
                 if let Some(op) = star.operand(cst) {
-                    self.add_pred(op, regex);
-                    self.set_regex_pred(cst, sema, op);
+                    self.record(sema, regex, op, &follow);
+                    self.walk(cst, sema, op, &follow);
                 }
             }
             Regex::Plus(plus) => {
                 if let Some(op) = plus.operand(cst) {
-                    self.add_pred(op, regex);
-                    self.set_regex_pred(cst, sema, op);
+                    self.record(sema, regex, op, &follow);
+                    self.walk(cst, sema, op, &follow);
                 }
             }
             Regex::Optional(opt) => {
                 if let Some(op) = opt.operand(cst) {
-                    self.add_pred(op, regex);
-                    self.set_regex_pred(cst, sema, op);
+                    self.record(sema, regex, op, &follow);
+                    self.walk(cst, sema, op, &follow);
+                }
+            }
+            Regex::Concat(concat) => {
+                for op in concat.operands(cst) {
+                    self.walk(cst, sema, op, &follow);
+                }
+            }
+            Regex::OrderedChoice(choice) => {
+                for op in choice.operands(cst) {
+                    self.walk(cst, sema, op, &follow);
+                }
+            }
+            Regex::Alternation(alt) => {
+                for op in alt.operands(cst) {
+                    self.walk(cst, sema, op, &follow);
                 }
             }
             Regex::Paren(paren) => {
                 if let Some(inner) = paren.inner(cst) {
-                    self.add_pred(inner, regex);
-                    self.set_regex_pred(cst, sema, inner);
+                    self.walk(cst, sema, inner, &follow);
                 }
             }
-            Regex::Symbol(_)
+            Regex::Name(_)
+            | Regex::Symbol(_)
             | Regex::Predicate(_)
             | Regex::Action(_)
             | Regex::Assertion(_)
@@ -1831,6 +1733,26 @@ impl RecoverySetGenerator {
             | Regex::Commit(_)
             | Regex::Return(_) => {}
         }
+    }
+    fn record<'a>(
+        &self,
+        sema: &mut SemanticData<'a>,
+        regex: Regex,
+        op: Regex,
+        follow: &BTreeSet<TokenName<'a>>,
+    ) {
+        let mut recovery = follow.clone();
+        if let Some(first) = sema.first_sets.get(&op.syntax()) {
+            for sym in first {
+                recovery.remove(sym);
+            }
+        }
+        if let Some(op_follow) = sema.follow_sets.get(&op.syntax()) {
+            for sym in op_follow {
+                recovery.remove(sym);
+            }
+        }
+        sema.recovery_sets.insert(regex.syntax(), recovery);
     }
 }
 

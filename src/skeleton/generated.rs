@@ -642,5 +642,5 @@ impl<'a> Parser<'a> {{
     }}
     /// Returns the CST for a parse of the start rule
     pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {{
-        self.parse_rule(|parser, diags| parser.rule_{2}(&std::collections::HashSet::new(), diags), diags, Rule::{3})
+        self.parse_rule(|parser, diags| parser.rule_{2}(&std::collections::HashSet::new(), &std::collections::HashSet::new(), diags), diags, Rule::{3})
     }}

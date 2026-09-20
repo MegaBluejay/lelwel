@@ -61,6 +61,7 @@ trait Generator {
     fn pattern(&self, level: usize) -> String;
     fn error(&self, token_symbols: &FxHashMap<&str, &str>) -> String;
     fn set(&self, open: bool) -> String;
+    fn recover(&self) -> String;
 }
 
 impl Generator for std::collections::BTreeSet<TokenName<'_>> {
@@ -93,6 +94,13 @@ impl Generator for std::collections::BTreeSet<TokenName<'_>> {
         } else {
             set
         }
+    }
+    fn recover(&self) -> String {
+        let symbols: Vec<_> = self.iter().map(|s| format!("Token::{}", s.0)).collect();
+        format!(
+            "&(&std::collections::HashSet::<Token>::from_iter([{}]) | recover)",
+            symbols.join(", ")
+        )
     }
 }
 
@@ -489,6 +497,7 @@ impl RustOutput {
                 "        fn rec<'a>(\
                \n            parser: &mut Parser<'a>,\
                \n            follow: &std::collections::HashSet<Token>,\
+               \n            recover: &std::collections::HashSet<Token>,\
                \n            diags: &mut Vec<<Parser<'a> as ParserCallbacks<'a>>::Diagnostic>,{}\
                \n            mut lhs: MarkClosed,\
                \n        ) {}{{\n",
@@ -504,12 +513,12 @@ impl RustOutput {
         let call_rec = |parser, binding_power, marker| {
             if requires_bp {
                 format!(
-                    "rec({parser}, follow, diags, {binding_power}, {marker}){};\n",
+                    "rec({parser}, follow, recover, diags, {binding_power}, {marker}){};\n",
                     if in_choice { "?" } else { "" }
                 )
             } else {
                 format!(
-                    "rec({parser}, follow, diags, {marker}){};\n",
+                    "rec({parser}, follow, recover, diags, {marker}){};\n",
                     if in_choice { "?" } else { "" }
                 )
             }
@@ -747,7 +756,7 @@ impl RustOutput {
                 "    /// Returns the CST for a parse of the {name} rule\
                \n    pub fn parse_{name}(mut self, diags: &mut Vec<Diagnostic>) -> Cst<'a> {{\
                \n        self.end_of_input = Token::EOF{};\
-               \n        self.parse_rule(|parser, diags| parser.rule_{name}(&std::collections::HashSet::new(), diags), diags, Rule::Part)\
+               \n        self.parse_rule(|parser, diags| parser.rule_{name}(&std::collections::HashSet::new(), &std::collections::HashSet::new(), diags), diags, Rule::Part)\
                \n    }}\n",
                snake_to_pascal_case(name)
             )
@@ -782,7 +791,7 @@ impl RustOutput {
 
         output.write_all(
             format!(
-                "    {}fn rule_{name}(&mut self, follow: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {}{{\n",
+                "    {}fn rule_{name}(&mut self, follow: &std::collections::HashSet<Token>, recover: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {}{{\n",
                 if has_rule_rename {
                     "#[allow(unused_assignments)]\n    "
                 } else {
@@ -949,18 +958,13 @@ impl RustOutput {
         let follow =
             sema.follow_sets[&regex.syntax()].set(sema.open_follow.contains(&regex.syntax()));
         let expected = expected.error(token_symbols);
-        let recovery = &sema.recovery_sets[&regex.syntax()];
-        let recovery = if recovery.is_empty() {
-            "".to_string()
-        } else {
-            format!(
-                "\n        | {} => {{{ordered_choice_return}\
-                 \n            {parser_name}.error(diags, err![{parser_name}, {expected}]);\
-                 \n            break;\
-                 \n        }}",
-                recovery.pattern(2)
-            )
-        };
+        let recovery = sema.recovery_sets[&regex.syntax()].recover();
+        let recovery = format!(
+            "\n        c if ({recovery}).contains(&c) => {{{ordered_choice_return}\
+             \n            {parser_name}.error(diags, err![{parser_name}, {expected}]);\
+             \n            break;\
+             \n        }}"
+        );
         if !is_loop {
             output.write_all("            break;\n".indent(level).as_bytes())?;
         }
@@ -1012,9 +1016,10 @@ impl RustOutput {
                     let rule_in_choice = sema.used_in_ordered_choice.contains(&rule.syntax());
                     let follow = sema.follow_sets[&regex.syntax()]
                         .set(sema.open_follow.contains(&regex.syntax()));
+                    let recover = sema.follow_sets[&regex.syntax()].recover();
                     output.write_all(
                         format!(
-                            "{parser_name}.rule_{name}({follow}, diags){};\n",
+                            "{parser_name}.rule_{name}({follow}, {recover}, diags){};\n",
                             if rule_in_choice && in_choice { "?" } else { "" }
                         )
                         .indent(level)
