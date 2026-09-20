@@ -476,7 +476,8 @@ impl RustOutput {
                 .any(|branch| matches!(branch, Recursion::Right(..) | Recursion::LeftRight(..)));
         output.write_all(
             format!(
-                "        fn rec<'a>(\
+                "        #[allow(unused_variables)]\
+               \n        fn rec<'a>(\
                \n            parser: &mut Parser<'a>,\
                \n            follow: &std::collections::HashSet<Token>,\
                \n            recover: &std::collections::HashSet<Token>,\
@@ -770,9 +771,9 @@ impl RustOutput {
             format!(
                 "    {}fn rule_{name}(&mut self, follow: &std::collections::HashSet<Token>, recover: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {}{{\n",
                 if has_rule_rename {
-                    "#[allow(unused_assignments)]\n    "
+                    "#[allow(unused_assignments)]\n    #[allow(unused_variables)]\n    "
                 } else {
-                    ""
+                    "#[allow(unused_variables)]\n    "
                 },
                 if in_choice { "-> Option<()> " } else { "" }
             )
