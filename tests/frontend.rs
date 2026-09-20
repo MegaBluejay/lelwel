@@ -375,8 +375,8 @@ fn syntax_error() {
     let mut lines = diags.lines();
 
     assert_eq!(Some("tests/frontend/syntax_error.llw:2:1: error: invalid syntax, expected one of: '=', <identifier>, ';'"), lines.next());
-    assert_eq!(Some("tests/frontend/syntax_error.llw:8:1: error: invalid syntax, expected: ')'"), lines.next());
-    assert_eq!(Some("tests/frontend/syntax_error.llw:13:2: error: invalid syntax, expected one of: <semantic action>, '&', <semantic assertion>, '^', <identifier>, '[', '(', <node creation>, <node marker>, <node rename>, '|', <semantic predicate>, ']', ')', ';', '/', <string literal>, '~'"), lines.next());
+    assert_eq!(Some("tests/frontend/syntax_error.llw:8:1: error: invalid syntax, expected one of: <semantic action>, '&', <semantic assertion>, '^', <identifier>, '[', '(', <node creation>, <node marker>, <node rename>, '|', <semantic predicate>, ')', '/', <string literal>, '~'"), lines.next());
+    assert_eq!(Some("tests/frontend/syntax_error.llw:13:2: error: invalid syntax, expected one of: <semantic action>, '&', <semantic assertion>, '^', <identifier>, '[', '(', <node creation>, <node marker>, <node rename>, '|', <semantic predicate>, ';', '/', <string literal>, '~'"), lines.next());
     assert_eq!(Some("tests/frontend/syntax_error.llw:13:1: error[E003]: use of undefined rule `b`"), lines.next());
     assert_eq!(None, lines.next());
 }
