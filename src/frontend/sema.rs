@@ -152,6 +152,10 @@ pub struct SemanticData<'a> {
     pub open_follow: FxHashSet<NodeRef>,
     pub predict_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
     pub open_predict: FxHashSet<NodeRef>,
+    /// Context-insensitive follow and predict sets, reconstructed from the
+    /// local sets for validation. Not used by code generation.
+    pub global_follow_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
+    pub global_predict_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
     pub recovery_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
     pub left_rec_local_follow_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>>,
     pub used: FxHashSet<NodeRef>,
@@ -953,6 +957,7 @@ impl<'a> LL1Validator {
             Self::calc_follow(cst, sema, file);
             Self::calc_predict(sema);
             Self::strip_holes(sema);
+            Self::calc_global(cst, sema, file);
             Self::check(cst, sema, diags, file);
         }
     }
@@ -1309,6 +1314,151 @@ impl<'a> LL1Validator {
         }
     }
 
+    /// Reconstructs the context-insensitive follow and predict sets from the
+    /// per-rule local ones, for the LL(1) checks. A local set carries the
+    /// enclosing rule's continuation as a hole (recorded in `open_follow`);
+    /// the global set expands that hole to the rule's merged follow.
+    fn calc_global(cst: &'a Cst<'_>, sema: &mut SemanticData<'a>, file: File) {
+        let mut node_rule: FxHashMap<NodeRef, NodeRef> = FxHashMap::default();
+        let mut calls: Vec<(NodeRef, NodeRef, NodeRef)> = vec![];
+        for rule in file.rule_decls(cst) {
+            if let Some(regex) = rule.regex(cst) {
+                let root = regex.syntax();
+                Self::collect(cst, sema, regex, root, &mut node_rule, &mut calls);
+            }
+        }
+
+        // Merged follow per rule, iterated to a fixpoint over the call graph.
+        let mut merged: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>> = FxHashMap::default();
+        for rule in file.rule_decls(cst) {
+            if let Some(regex) = rule.regex(cst) {
+                let root = regex.syntax();
+                let seed = sema.follow_sets.get(&root).cloned().unwrap_or_default();
+                merged.insert(root, seed);
+            }
+        }
+        let mut change = true;
+        while change {
+            change = false;
+            for &(occ, callee_root, caller_root) in &calls {
+                let mut add = sema.follow_sets.get(&occ).cloned().unwrap_or_default();
+                if sema.open_follow.contains(&occ) {
+                    add.extend(merged[&caller_root].iter().cloned());
+                }
+                let target = merged.get_mut(&callee_root).unwrap();
+                let size = target.len();
+                target.extend(add);
+                change |= target.len() != size;
+            }
+        }
+
+        let mut global_follow_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>> =
+            FxHashMap::default();
+        for (node, local) in &sema.follow_sets {
+            let mut set = local.clone();
+            if sema.open_follow.contains(node)
+                && let Some(root) = node_rule.get(node)
+            {
+                set.extend(merged[root].iter().cloned());
+            }
+            global_follow_sets.insert(*node, set);
+        }
+        let mut global_predict_sets: FxHashMap<NodeRef, BTreeSet<TokenName<'a>>> =
+            FxHashMap::default();
+        for (node, first) in &sema.first_sets {
+            let mut set = first.clone();
+            if set.remove(&TokenName::EPSILON)
+                && let Some(follow) = global_follow_sets.get(node)
+            {
+                set.extend(follow.iter().cloned());
+            }
+            global_predict_sets.insert(*node, set);
+        }
+        sema.global_follow_sets = global_follow_sets;
+        sema.global_predict_sets = global_predict_sets;
+
+        // The LL(1) checks are context-insensitive, so rebuild the follow of
+        // foreign references from the global sets.
+        sema.left_rec_local_follow_sets.clear();
+        for &(occ, callee_root, caller_root) in &calls {
+            if callee_root != caller_root {
+                let follow = sema.global_follow_sets[&occ].clone();
+                sema.left_rec_local_follow_sets
+                    .entry(callee_root)
+                    .or_default()
+                    .extend(follow);
+            }
+        }
+    }
+
+    fn collect(
+        cst: &'a Cst<'_>,
+        sema: &SemanticData<'a>,
+        regex: Regex,
+        root: NodeRef,
+        node_rule: &mut FxHashMap<NodeRef, NodeRef>,
+        calls: &mut Vec<(NodeRef, NodeRef, NodeRef)>,
+    ) {
+        node_rule.insert(regex.syntax(), root);
+        match regex {
+            Regex::Name(name) => {
+                if let Some(callee_root) = sema
+                    .decl_bindings
+                    .get(&name.syntax())
+                    .and_then(|decl| RuleDecl::cast(cst, *decl))
+                    .and_then(|rule| rule.regex(cst))
+                {
+                    calls.push((name.syntax(), callee_root.syntax(), root));
+                }
+            }
+            Regex::Concat(concat) => {
+                for op in concat.operands(cst) {
+                    Self::collect(cst, sema, op, root, node_rule, calls);
+                }
+            }
+            Regex::OrderedChoice(choice) => {
+                for op in choice.operands(cst) {
+                    Self::collect(cst, sema, op, root, node_rule, calls);
+                }
+            }
+            Regex::Alternation(alt) => {
+                for op in alt.operands(cst) {
+                    Self::collect(cst, sema, op, root, node_rule, calls);
+                }
+            }
+            Regex::Star(star) => {
+                if let Some(op) = star.operand(cst) {
+                    Self::collect(cst, sema, op, root, node_rule, calls);
+                }
+            }
+            Regex::Plus(plus) => {
+                if let Some(op) = plus.operand(cst) {
+                    Self::collect(cst, sema, op, root, node_rule, calls);
+                }
+            }
+            Regex::Optional(opt) => {
+                if let Some(op) = opt.operand(cst) {
+                    Self::collect(cst, sema, op, root, node_rule, calls);
+                }
+            }
+            Regex::Paren(paren) => {
+                if let Some(inner) = paren.inner(cst) {
+                    Self::collect(cst, sema, inner, root, node_rule, calls);
+                }
+            }
+            Regex::Symbol(_)
+            | Regex::Predicate(_)
+            | Regex::Action(_)
+            | Regex::Assertion(_)
+            | Regex::NodeRename(_)
+            | Regex::NodeElision(_)
+            | Regex::NodeMarker(_)
+            | Regex::NodeCreation(_)
+            | Regex::Commit(_)
+            | Regex::Return(_) => {}
+        }
+    }
+
     /// Checks if LL(1) condition holds for the all regexes.
     fn check(cst: &Cst<'_>, sema: &SemanticData<'a>, diags: &mut Vec<Diagnostic>, file: File) {
         for rule in file.rule_decls(cst) {
@@ -1352,7 +1502,7 @@ impl<'a> LL1Validator {
         left_rec: bool,
         ordered_choice: bool,
     ) {
-        let prediction = &sema.predict_sets[&op.syntax()];
+        let prediction = &sema.global_predict_sets[&op.syntax()];
         let mut related = vec![];
         for op in branches.skip(i + 1) {
             let op = if left_rec {
@@ -1360,7 +1510,7 @@ impl<'a> LL1Validator {
             } else {
                 op
             };
-            let other_prediction = &sema.predict_sets[&op.syntax()];
+            let other_prediction = &sema.global_predict_sets[&op.syntax()];
             let intersection = prediction
                 .intersection(other_prediction)
                 .cloned()
@@ -1408,7 +1558,7 @@ impl<'a> LL1Validator {
                     let op = Self::skip_first(cst, *branch);
 
                     if !Self::has_predicate(cst, *branch) {
-                        let prediction = &sema.predict_sets[&op.syntax()];
+                        let prediction = &sema.global_predict_sets[&op.syntax()];
                         let local_follow = &sema.left_rec_local_follow_sets[&alt.syntax()];
                         let intersection = prediction
                             .intersection(local_follow)
@@ -1471,8 +1621,8 @@ impl<'a> LL1Validator {
             }
             Regex::Star(star) => {
                 if let Some(op) = star.operand(cst) {
-                    let intersection = sema.follow_sets[&regex.syntax()]
-                        .intersection(&sema.predict_sets[&op.syntax()])
+                    let intersection = sema.global_follow_sets[&regex.syntax()]
+                        .intersection(&sema.global_predict_sets[&op.syntax()])
                         .cloned()
                         .collect::<BTreeSet<_>>();
                     if !Self::has_predicate(cst, op) && !intersection.is_empty() {
@@ -1484,8 +1634,8 @@ impl<'a> LL1Validator {
             }
             Regex::Plus(plus) => {
                 if let Some(op) = plus.operand(cst) {
-                    let intersection = sema.follow_sets[&regex.syntax()]
-                        .intersection(&sema.predict_sets[&op.syntax()])
+                    let intersection = sema.global_follow_sets[&regex.syntax()]
+                        .intersection(&sema.global_predict_sets[&op.syntax()])
                         .cloned()
                         .collect::<BTreeSet<_>>();
                     if !Self::has_predicate(cst, op) && !intersection.is_empty() {
@@ -1497,8 +1647,8 @@ impl<'a> LL1Validator {
             }
             Regex::Optional(opt) => {
                 if let Some(op) = opt.operand(cst) {
-                    let intersection = sema.follow_sets[&regex.syntax()]
-                        .intersection(&sema.predict_sets[&op.syntax()])
+                    let intersection = sema.global_follow_sets[&regex.syntax()]
+                        .intersection(&sema.global_predict_sets[&op.syntax()])
                         .cloned()
                         .collect::<BTreeSet<_>>();
                     if !Self::has_predicate(cst, op) && !intersection.is_empty() {
