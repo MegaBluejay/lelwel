@@ -1,3 +1,4 @@
+use enumset::enum_set;
 use lelwel_onthefly::{Token, parse_with_log};
 use pretty_assertions::assert_eq;
 
@@ -10,45 +11,50 @@ use pretty_assertions::assert_eq;
 
 /// Follow set of `stmt`, passed down by the loop of `prog: stmt*`.
 /// follow(stmt) = {EOF, Id, Num, LParen}
-const STMT_FOLLOW: &[Token] = &[Token::EOF, Token::Id, Token::Num, Token::LParen];
+const STMT_FOLLOW: enumset::EnumSet<Token> =
+    enum_set!(Token::EOF | Token::Id | Token::Num | Token::LParen);
 
 /// First set of `expr`, `term`, and `factor`, which is the same for all three.
 /// The left recursive dispatch of `expr`, the alternation dispatch of
 /// `factor`, and the mandatory operand after `(`, `,`, `+`, and `-` all pass it
 /// down.
 /// first(expr) = first(term) = first(factor) = {Id, Num, LParen}
-const FIRST_OPERAND: &[Token] = &[Token::Id, Token::Num, Token::LParen];
+const FIRST_OPERAND: enumset::EnumSet<Token> = enum_set!(Token::Id | Token::Num | Token::LParen);
 
 /// Predict set of the `[Star term]` optional of `term` in the top-level
 /// `expr_stmt` context: `Star` plus `follow(term) = {Plus, Minus, Semi}`.
-const TERM_OPTIONAL: &[Token] = &[Token::Plus, Token::Minus, Token::Star, Token::Semi];
+const TERM_OPTIONAL: enumset::EnumSet<Token> =
+    enum_set!(Token::Plus | Token::Minus | Token::Star | Token::Semi);
 
 /// The same optional inside a parenthesized expression, where
 /// `follow(term) = {Plus, Minus, RParen}`.
-const TERM_OPTIONAL_PAREN: &[Token] = &[Token::Plus, Token::Minus, Token::Star, Token::RParen];
+const TERM_OPTIONAL_PAREN: enumset::EnumSet<Token> =
+    enum_set!(Token::Plus | Token::Minus | Token::Star | Token::RParen);
 
 /// Predict set of the `[LParen [args] RParen]` optional of `factor` in the
 /// top-level `expr_stmt` context: the `(` that starts a call plus
 /// `follow(factor) = {Plus, Minus, Star, Semi}`.
-const CALL_OPTIONAL: &[Token] =
-    &[Token::Plus, Token::Minus, Token::Star, Token::Semi, Token::LParen];
+const CALL_OPTIONAL: enumset::EnumSet<Token> =
+    enum_set!(Token::Plus | Token::Minus | Token::Star | Token::Semi | Token::LParen);
 
 /// The same optional inside a parenthesized expression, where
 /// `follow(factor) = {Plus, Minus, Star, RParen}`.
-const CALL_OPTIONAL_PAREN: &[Token] =
-    &[Token::Plus, Token::Minus, Token::Star, Token::RParen, Token::LParen];
+const CALL_OPTIONAL_PAREN: enumset::EnumSet<Token> =
+    enum_set!(Token::Plus | Token::Minus | Token::Star | Token::RParen | Token::LParen);
 
 /// The same optional inside a call argument list, where
 /// `follow(factor) = {Plus, Minus, Star, Comma, RParen}`.
-const CALL_OPTIONAL_ARGS: &[Token] =
-    &[Token::Plus, Token::Minus, Token::Star, Token::Comma, Token::LParen, Token::RParen];
+const CALL_OPTIONAL_ARGS: enumset::EnumSet<Token> = enum_set!(
+    Token::Plus | Token::Minus | Token::Star | Token::Comma | Token::LParen | Token::RParen
+);
 
 /// Predict set of the `[args]` optional inside a call list, passed down by the
 /// inner optional. It is the first set of `args` plus the `)` that closes the
 /// list.
 /// predict([args]) = first(args) + RParen
-const ARGS_OPTIONAL: &[Token] = &[Token::Id, Token::Num, Token::LParen, Token::RParen];
-type LexCallCheck = (usize, Token, &'static [Token]);
+const ARGS_OPTIONAL: enumset::EnumSet<Token> =
+    enum_set!(Token::Id | Token::Num | Token::LParen | Token::RParen);
+type LexCallCheck = (usize, Token, enumset::EnumSet<Token>);
 
 /// Asserts that parsing `source` with on-the-fly lexing produces exactly
 /// `tree` and the diagnostics `diags`, and that the lexer served exactly the
@@ -65,19 +71,7 @@ fn check(source: &str, tree: &str, diags: &str, calls: &[LexCallCheck]) {
     let (res, log) = parse_with_log(source);
     assert_eq!(tree, &res[0], "cst mismatch for {source:?}");
     assert_eq!(diags, &res[1], "diagnostics mismatch for {source:?}");
-    assert_eq!(
-        &calls
-            .iter()
-            .copied()
-            .map(|(i, t, exp)| {
-                let mut exp = exp.to_owned();
-                exp.sort();
-                (i, t, exp)
-            })
-            .collect::<Vec<_>>(),
-        &log[..],
-        "lex sequence mismatch for {source:?}"
-    );
+    assert_eq!(calls, &log[..], "lex sequence mismatch for {source:?}");
 }
 
 fn check_ok(source: &str, tree: &str, calls: &[LexCallCheck]) {
@@ -102,11 +96,11 @@ fn basic_decl() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Eq, &[Token::Eq]),
-            (3, Token::Whitespace, &[Token::Id]),
-            (4, Token::Id, &[Token::Id]),
-            (5, Token::Semi, &[Token::Semi]),
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Eq, enum_set!(Token::Eq)),
+            (3, Token::Whitespace, enum_set!(Token::Id)),
+            (4, Token::Id, enum_set!(Token::Id)),
+            (5, Token::Semi, enum_set!(Token::Semi)),
         ],
     );
 }
@@ -132,16 +126,16 @@ fn rollback_op_stmt() {
         &[
             (0, Token::Id, STMT_FOLLOW),
             // `decl` attempt, rolled back:
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Eq, &[Token::Eq]),
-            (3, Token::Whitespace, &[Token::Id]),
-            (4, Token::Num, &[Token::Id]),
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Eq, enum_set!(Token::Eq)),
+            (3, Token::Whitespace, enum_set!(Token::Id)),
+            (4, Token::Num, enum_set!(Token::Id)),
             // `op_stmt` re-lexes the same input:
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Eq, &[Token::Eq]),
-            (3, Token::Whitespace, &[Token::Num]),
-            (4, Token::Num, &[Token::Num]),
-            (5, Token::Semi, &[Token::Semi]),
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Eq, enum_set!(Token::Eq)),
+            (3, Token::Whitespace, enum_set!(Token::Num)),
+            (4, Token::Num, enum_set!(Token::Num)),
+            (5, Token::Semi, enum_set!(Token::Semi)),
         ],
     );
 }
@@ -171,10 +165,10 @@ fn rollback_expr_stmt() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Plus, &[Token::Eq]), // `decl` attempt
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Plus, &[Token::Eq]), // `op_stmt` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Plus, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Plus, enum_set!(Token::Eq)), // `op_stmt` attempt
             (1, Token::Whitespace, CALL_OPTIONAL),
             (2, Token::Plus, CALL_OPTIONAL), // `expr_stmt`
             (3, Token::Whitespace, FIRST_OPERAND),
@@ -201,9 +195,9 @@ fn rollback_chained() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Semi, &[Token::Eq]),  // `decl` attempt
-            (1, Token::Semi, &[Token::Eq]),  // `op_stmt` attempt
-            (1, Token::Semi, CALL_OPTIONAL), // `expr_stmt`
+            (1, Token::Semi, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::Semi, enum_set!(Token::Eq)), // `op_stmt` attempt
+            (1, Token::Semi, CALL_OPTIONAL),        // `expr_stmt`
         ],
     );
 }
@@ -230,16 +224,16 @@ fn rollback_with_skipped_tokens() {
         &[
             (0, Token::Whitespace, STMT_FOLLOW),
             (2, Token::Id, STMT_FOLLOW),
-            (3, Token::Whitespace, &[Token::Eq]),
-            (4, Token::Eq, &[Token::Eq]),
-            (5, Token::Whitespace, &[Token::Id]),
-            (6, Token::Num, &[Token::Id]), // `decl` attempt
-            (3, Token::Whitespace, &[Token::Eq]),
-            (4, Token::Eq, &[Token::Eq]),
-            (5, Token::Whitespace, &[Token::Num]),
-            (6, Token::Num, &[Token::Num]), // `op_stmt`
-            (7, Token::Whitespace, &[Token::Semi]),
-            (8, Token::Semi, &[Token::Semi]),
+            (3, Token::Whitespace, enum_set!(Token::Eq)),
+            (4, Token::Eq, enum_set!(Token::Eq)),
+            (5, Token::Whitespace, enum_set!(Token::Id)),
+            (6, Token::Num, enum_set!(Token::Id)), // `decl` attempt
+            (3, Token::Whitespace, enum_set!(Token::Eq)),
+            (4, Token::Eq, enum_set!(Token::Eq)),
+            (5, Token::Whitespace, enum_set!(Token::Num)),
+            (6, Token::Num, enum_set!(Token::Num)), // `op_stmt`
+            (7, Token::Whitespace, enum_set!(Token::Semi)),
+            (8, Token::Semi, enum_set!(Token::Semi)),
             (9, Token::Whitespace, STMT_FOLLOW),
         ],
     );
@@ -268,21 +262,21 @@ fn multiple_statements() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Eq, &[Token::Eq]),
-            (2, Token::Num, &[Token::Id]), // `decl` attempt
-            (1, Token::Eq, &[Token::Eq]),
-            (2, Token::Num, &[Token::Num]), // `op_stmt`
-            (3, Token::Semi, &[Token::Semi]),
+            (1, Token::Eq, enum_set!(Token::Eq)),
+            (2, Token::Num, enum_set!(Token::Id)), // `decl` attempt
+            (1, Token::Eq, enum_set!(Token::Eq)),
+            (2, Token::Num, enum_set!(Token::Num)), // `op_stmt`
+            (3, Token::Semi, enum_set!(Token::Semi)),
             (4, Token::Id, STMT_FOLLOW), // lookahead for the next statement
-            (5, Token::Whitespace, &[Token::Eq]),
-            (6, Token::Eq, &[Token::Eq]),
-            (7, Token::Whitespace, &[Token::Id]),
-            (8, Token::Num, &[Token::Id]), // second `decl` attempt
-            (5, Token::Whitespace, &[Token::Eq]),
-            (6, Token::Eq, &[Token::Eq]),
-            (7, Token::Whitespace, &[Token::Num]),
-            (8, Token::Num, &[Token::Num]), // second `op_stmt`
-            (9, Token::Semi, &[Token::Semi]),
+            (5, Token::Whitespace, enum_set!(Token::Eq)),
+            (6, Token::Eq, enum_set!(Token::Eq)),
+            (7, Token::Whitespace, enum_set!(Token::Id)),
+            (8, Token::Num, enum_set!(Token::Id)), // second `decl` attempt
+            (5, Token::Whitespace, enum_set!(Token::Eq)),
+            (6, Token::Eq, enum_set!(Token::Eq)),
+            (7, Token::Whitespace, enum_set!(Token::Num)),
+            (8, Token::Num, enum_set!(Token::Num)), // second `op_stmt`
+            (9, Token::Semi, enum_set!(Token::Semi)),
         ],
     );
 }
@@ -302,9 +296,9 @@ fn multi_character_identifiers() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (3, Token::Semi, &[Token::Eq]),  // `decl` attempt
-            (3, Token::Semi, &[Token::Eq]),  // `op_stmt` attempt
-            (3, Token::Semi, CALL_OPTIONAL), // `expr_stmt`
+            (3, Token::Semi, enum_set!(Token::Eq)), // `decl` attempt
+            (3, Token::Semi, enum_set!(Token::Eq)), // `op_stmt` attempt
+            (3, Token::Semi, CALL_OPTIONAL),        // `expr_stmt`
         ],
     );
 }
@@ -337,19 +331,19 @@ error: invalid character '@'
 ",
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Eq, &[Token::Eq]),
-            (3, Token::Whitespace, &[Token::Id]),
-            (4, Token::Error, &[Token::Id]), // `decl` attempt
-            (5, Token::Whitespace, &[Token::Id]),
-            (6, Token::Num, &[Token::Id]),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Eq, &[Token::Eq]),
-            (3, Token::Whitespace, &[Token::Num]),
-            (4, Token::Error, &[Token::Num]), // `op_stmt`
-            (5, Token::Whitespace, &[Token::Num]),
-            (6, Token::Num, &[Token::Num]),
-            (7, Token::Semi, &[Token::Semi]),
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Eq, enum_set!(Token::Eq)),
+            (3, Token::Whitespace, enum_set!(Token::Id)),
+            (4, Token::Error, enum_set!(Token::Id)), // `decl` attempt
+            (5, Token::Whitespace, enum_set!(Token::Id)),
+            (6, Token::Num, enum_set!(Token::Id)),
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Eq, enum_set!(Token::Eq)),
+            (3, Token::Whitespace, enum_set!(Token::Num)),
+            (4, Token::Error, enum_set!(Token::Num)), // `op_stmt`
+            (5, Token::Whitespace, enum_set!(Token::Num)),
+            (6, Token::Num, enum_set!(Token::Num)),
+            (7, Token::Semi, enum_set!(Token::Semi)),
         ],
     );
 }
@@ -413,26 +407,26 @@ error: invalid syntax, expected one of: '-', '+', ';', '*'
 ",
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Eq, &[Token::Eq]),
-            (3, Token::Whitespace, &[Token::Id]),
-            (4, Token::Num, &[Token::Id]), // `decl` attempt
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Eq, &[Token::Eq]),
-            (3, Token::Whitespace, &[Token::Num]),
-            (4, Token::Num, &[Token::Num]),
-            (5, Token::Whitespace, &[Token::Semi]),
-            (6, Token::Id, &[Token::Semi]), // `op_stmt` attempt, fails at `Semi`
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Eq, enum_set!(Token::Eq)),
+            (3, Token::Whitespace, enum_set!(Token::Id)),
+            (4, Token::Num, enum_set!(Token::Id)), // `decl` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Eq, enum_set!(Token::Eq)),
+            (3, Token::Whitespace, enum_set!(Token::Num)),
+            (4, Token::Num, enum_set!(Token::Num)),
+            (5, Token::Whitespace, enum_set!(Token::Semi)),
+            (6, Token::Id, enum_set!(Token::Semi)), // `op_stmt` attempt, fails at `Semi`
             (1, Token::Whitespace, CALL_OPTIONAL),
             (2, Token::Eq, CALL_OPTIONAL),
             (3, Token::Whitespace, CALL_OPTIONAL),
             (4, Token::Num, CALL_OPTIONAL),
             (5, Token::Whitespace, TERM_OPTIONAL),
             (6, Token::Id, TERM_OPTIONAL), // `expr_stmt` attempt, hard error at `=`
-            (7, Token::Whitespace, &[Token::Eq]),
-            (8, Token::Plus, &[Token::Eq]), // second statement, `decl` attempt
-            (7, Token::Whitespace, &[Token::Eq]),
-            (8, Token::Plus, &[Token::Eq]), // second statement, `op_stmt` attempt
+            (7, Token::Whitespace, enum_set!(Token::Eq)),
+            (8, Token::Plus, enum_set!(Token::Eq)), // second statement, `decl` attempt
+            (7, Token::Whitespace, enum_set!(Token::Eq)),
+            (8, Token::Plus, enum_set!(Token::Eq)), // second statement, `op_stmt` attempt
             (7, Token::Whitespace, CALL_OPTIONAL),
             (8, Token::Plus, CALL_OPTIONAL), // second statement, `expr_stmt`
             (9, Token::Whitespace, FIRST_OPERAND),
@@ -480,10 +474,10 @@ fn left_recursion() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Plus, &[Token::Eq]), // `decl` attempt
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Plus, &[Token::Eq]), // `op_stmt` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Plus, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Plus, enum_set!(Token::Eq)), // `op_stmt` attempt
             (1, Token::Whitespace, CALL_OPTIONAL),
             (2, Token::Plus, CALL_OPTIONAL),
             (3, Token::Whitespace, FIRST_OPERAND),
@@ -526,10 +520,10 @@ fn right_recursion() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Star, &[Token::Eq]), // `decl` attempt
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Star, &[Token::Eq]), // `op_stmt` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Star, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Star, enum_set!(Token::Eq)), // `op_stmt` attempt
             (1, Token::Whitespace, CALL_OPTIONAL),
             (2, Token::Star, CALL_OPTIONAL),
             (3, Token::Whitespace, FIRST_OPERAND),
@@ -574,10 +568,10 @@ fn mixed_precedence() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Plus, &[Token::Eq]), // `decl` attempt
-            (1, Token::Whitespace, &[Token::Eq]),
-            (2, Token::Plus, &[Token::Eq]), // `op_stmt` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Plus, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::Whitespace, enum_set!(Token::Eq)),
+            (2, Token::Plus, enum_set!(Token::Eq)), // `op_stmt` attempt
             (1, Token::Whitespace, CALL_OPTIONAL),
             (2, Token::Plus, CALL_OPTIONAL),
             (3, Token::Whitespace, FIRST_OPERAND),
@@ -672,8 +666,8 @@ fn call_with_arguments() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::LParen, &[Token::Eq]), // `decl` attempt
-            (1, Token::LParen, &[Token::Eq]), // `op_stmt` attempt
+            (1, Token::LParen, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::LParen, enum_set!(Token::Eq)), // `op_stmt` attempt
             (1, Token::LParen, CALL_OPTIONAL),
             (2, Token::Id, ARGS_OPTIONAL),
             (3, Token::Comma, CALL_OPTIONAL_ARGS),
@@ -704,8 +698,8 @@ fn call_without_arguments() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::LParen, &[Token::Eq]), // `decl` attempt
-            (1, Token::LParen, &[Token::Eq]), // `op_stmt` attempt
+            (1, Token::LParen, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::LParen, enum_set!(Token::Eq)), // `op_stmt` attempt
             (1, Token::LParen, CALL_OPTIONAL),
             (2, Token::RParen, ARGS_OPTIONAL),
             (3, Token::Semi, TERM_OPTIONAL),
@@ -750,8 +744,8 @@ fn repeated_arguments() {
 "#,
         &[
             (0, Token::Id, STMT_FOLLOW),
-            (1, Token::LParen, &[Token::Eq]), // `decl` attempt
-            (1, Token::LParen, &[Token::Eq]), // `op_stmt` attempt
+            (1, Token::LParen, enum_set!(Token::Eq)), // `decl` attempt
+            (1, Token::LParen, enum_set!(Token::Eq)), // `op_stmt` attempt
             (1, Token::LParen, CALL_OPTIONAL),
             (2, Token::Id, ARGS_OPTIONAL),
             (3, Token::Comma, CALL_OPTIONAL_ARGS),

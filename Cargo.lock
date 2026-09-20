@@ -165,6 +165,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "darling"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
+dependencies = [
+ "darling_core",
+ "darling_macro",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1247195ecd7e3c85f83c8d2a366e4210d588e802133e1e355180a9870b517ea4"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
+dependencies = [
+ "darling_core",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -194,6 +228,27 @@ dependencies = [
  "rustc-hash",
  "serde",
  "unicode-width",
+]
+
+[[package]]
+name = "enumset"
+version = "1.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccc5801fd11762e24d1e420d01d2ac518f2a2ca4329d4fbb6639f2412b6204e0"
+dependencies = [
+ "enumset_derive",
+]
+
+[[package]]
+name = "enumset_derive"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bd536557b58c682b217b8fb199afdff47cd3eff260623f19e77074eb073d63a"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -353,6 +408,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ident_case"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
+
+[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -405,6 +466,7 @@ dependencies = [
  "codespan-lsp",
  "codespan-reporting",
  "dprint-core",
+ "enumset",
  "logos",
  "lsp-server",
  "lsp-types 0.91.1",
@@ -421,6 +483,7 @@ name = "lelwel-brainfuck"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
  "pretty_assertions",
@@ -432,6 +495,7 @@ name = "lelwel-c"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
  "pretty_assertions",
@@ -444,6 +508,7 @@ name = "lelwel-calc"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
 ]
@@ -453,6 +518,7 @@ name = "lelwel-json"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
  "pretty_assertions",
@@ -464,6 +530,7 @@ name = "lelwel-l"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
  "pretty_assertions",
@@ -475,6 +542,7 @@ name = "lelwel-lua"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
  "pretty_assertions",
@@ -486,6 +554,7 @@ name = "lelwel-oberon0"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
  "pretty_assertions",
@@ -497,6 +566,7 @@ name = "lelwel-onthefly"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "pretty_assertions",
 ]
@@ -506,6 +576,7 @@ name = "lelwel-python2"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "herring",
  "lelwel",
  "pretty_assertions",
@@ -517,6 +588,7 @@ name = "lelwel-toml"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "herring",
  "lelwel",
  "pretty_assertions",
@@ -528,6 +600,7 @@ name = "lelwel-wgsl"
 version = "0.0.0"
 dependencies = [
  "codespan-reporting",
+ "enumset",
  "lelwel",
  "logos",
  "pretty_assertions",

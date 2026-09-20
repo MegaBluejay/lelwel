@@ -14,6 +14,7 @@ exclude = ["/scripts", "/tests/generate.sh", "/.github/", "/.gitignore"]
 rust-2018-idioms = { level = "deny" }
 
 [dependencies]
+enumset = "1"
 logos = "0.16"
 codespan-reporting = "0.13"
 rustc-hash = "2.1"

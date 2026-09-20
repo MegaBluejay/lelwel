@@ -193,6 +193,7 @@ arg_list: '(' [expr (?1 ',' expr)* [',']] ')';
    [dependencies]
    logos = "0.16"
    codespan-reporting = "0.13"
+   enumset = "1"
 
    [build-dependencies]
    lelwel = "0.10"

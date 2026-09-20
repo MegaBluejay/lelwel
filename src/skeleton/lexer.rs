@@ -21,7 +21,7 @@ impl LexerError {
 
 // TODO: implement lexer
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Logos, Debug, PartialEq, Copy, Clone)]
+#[derive(Logos, Debug, enumset::EnumSetType)]
 #[logos(error = LexerError)]
 pub enum Token {
     EOF,

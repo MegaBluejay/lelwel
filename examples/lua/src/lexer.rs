@@ -90,7 +90,7 @@ fn parse_first_line_comment(lexer: &mut Lexer<'_, Token>) -> Token {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Logos, Debug, PartialEq, Eq, Copy, Clone, Hash)]
+#[derive(Logos, Debug, enumset::EnumSetType)]
 #[logos(error = LexerError)]
 pub enum Token {
     EOF,

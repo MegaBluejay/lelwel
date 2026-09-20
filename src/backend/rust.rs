@@ -69,23 +69,24 @@ impl Generator for std::collections::BTreeSet<TokenName<'_>> {
         symbols.join(&format!("\n{}| ", "    ".repeat(level)))
     }
     fn set(&self, open: bool) -> String {
-        let symbols: Vec<_> = self.iter().map(|s| format!("Token::{}", s.0)).collect();
-        let set = format!(
-            "&std::collections::HashSet::<Token>::from_iter([{}])",
-            symbols.join(", ")
-        );
+        let set = enum_set_expr(self);
         if open {
-            format!("&({set} | follow)")
+            format!("({set} | follow)")
         } else {
             set
         }
     }
     fn recover(&self) -> String {
-        let symbols: Vec<_> = self.iter().map(|s| format!("Token::{}", s.0)).collect();
-        format!(
-            "&(&std::collections::HashSet::<Token>::from_iter([{}]) | recover)",
-            symbols.join(", ")
-        )
+        format!("({} | recover)", enum_set_expr(self))
+    }
+}
+
+fn enum_set_expr(set: &std::collections::BTreeSet<TokenName<'_>>) -> String {
+    if set.is_empty() {
+        "enumset::EnumSet::empty()".to_string()
+    } else {
+        let symbols: Vec<_> = set.iter().map(|s| format!("Token::{}", s.0)).collect();
+        format!("enumset::enum_set!({})", symbols.join(" | "))
     }
 }
 
@@ -172,7 +173,7 @@ impl RustOutput {
             \n\
             \n    /// Called at the start of the parse to generate all tokens and corresponding spans.\
             \n    fn create_tokens(context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>);\
-            \n    fn lex(&mut self, _expect: &std::collections::HashSet<Token>, _diags: &mut Vec<Self::Diagnostic>) -> Option<(Token, Span)> {\
+            \n    fn lex(&mut self, _expect: enumset::EnumSet<Token>, _diags: &mut Vec<Self::Diagnostic>) -> Option<(Token, Span)> {\
             \n        None\
             \n    }\
             \n    /// Called when diagnostic is created.\
@@ -479,8 +480,8 @@ impl RustOutput {
                 "        #[allow(unused_variables)]\
                \n        fn rec<'a>(\
                \n            parser: &mut Parser<'a>,\
-               \n            follow: &std::collections::HashSet<Token>,\
-               \n            recover: &std::collections::HashSet<Token>,\
+               \n            follow: enumset::EnumSet<Token>,\
+               \n            recover: enumset::EnumSet<Token>,\
                \n            diags: &mut Vec<<Parser<'a> as ParserCallbacks<'a>>::Diagnostic>,{}\
                \n            mut lhs: MarkClosed,\
                \n        ) {}{{\n",
@@ -621,8 +622,7 @@ impl RustOutput {
         // left recursive branches
         output.write_all(b"            loop {\n")?;
         Self::output_node_kind_decl(output, has_rule_rename, name, 4, false)?;
-        let set =
-            sema.follow_sets[&regex.syntax()].set(sema.open_follow.contains(&regex.syntax()));
+        let set = sema.follow_sets[&regex.syntax()].set(sema.open_follow.contains(&regex.syntax()));
         output.write_all(
             format!("match parser.current({set}, diags) {{\n")
                 .indent(4)
@@ -735,7 +735,7 @@ impl RustOutput {
                 "    /// Returns the CST for a parse of the {name} rule\
                \n    pub fn parse_{name}(mut self, diags: &mut Vec<Diagnostic>) -> Cst<'a> {{\
                \n        self.end_of_input = Token::EOF{};\
-               \n        self.parse_rule(|parser, diags| parser.rule_{name}(&std::collections::HashSet::new(), &std::collections::HashSet::new(), diags), diags, Rule::Part)\
+               \n        self.parse_rule(|parser, diags| parser.rule_{name}(enumset::EnumSet::empty(), enumset::EnumSet::empty(), diags), diags, Rule::Part)\
                \n    }}\n",
                snake_to_pascal_case(name)
             )
@@ -769,7 +769,7 @@ impl RustOutput {
 
         output.write_all(
             format!(
-                "    {}fn rule_{name}(&mut self, follow: &std::collections::HashSet<Token>, recover: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {}{{\n",
+                "    {}fn rule_{name}(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {}{{\n",
                 if has_rule_rename {
                     "#[allow(unused_assignments)]\n    #[allow(unused_variables)]\n    "
                 } else {
@@ -860,7 +860,7 @@ impl RustOutput {
                 .strip_prefix(" if ")
                 .map(|s| format!(" && {s}"))
                 .unwrap_or_default();
-            format!("c if ({}).contains(&c){suffix} => {{\n", predict.set(true))
+            format!("c if ({}).contains(c){suffix} => {{\n", predict.set(true))
         } else {
             format!("{}{predicate} => {{\n", predict.pattern(0))
         })
@@ -933,7 +933,7 @@ impl RustOutput {
             sema.follow_sets[&regex.syntax()].set(sema.open_follow.contains(&regex.syntax()));
         let recovery = sema.recovery_sets[&regex.syntax()].recover();
         let recovery = format!(
-            "\n        c if ({recovery}).contains(&c) => {{{ordered_choice_return}\
+            "\n        c if ({recovery}).contains(c) => {{{ordered_choice_return}\
              \n            {parser_name}.error(diags, expected_message(expected));\
              \n            break;\
              \n        }}"
@@ -944,7 +944,7 @@ impl RustOutput {
         output.write_all(
             format!(
                 "        }}\
-               \n        c if ({follow}).contains(&c) => break,{recovery}\
+               \n        c if ({follow}).contains(c) => break,{recovery}\
                \n        _ => {{{ordered_choice_return}\
                \n            {parser_name}.advance_with_error(diags, expected_message(expected));\
                \n        }}\
@@ -1065,7 +1065,7 @@ impl RustOutput {
                         )?;
                         output.write_all(
                             format!(
-                                "if expected.contains(&{parser_name}.current(expected, diags)) {{\n"
+                                "if expected.contains({parser_name}.current(expected, diags)) {{\n"
                             )
                             .indent(level + 1)
                             .as_bytes(),
@@ -1148,7 +1148,7 @@ impl RustOutput {
                         )?;
                         output.write_all(
                             format!(
-                                "if expected.contains(&{parser_name}.current(expected, diags)) {{\n"
+                                "if expected.contains({parser_name}.current(expected, diags)) {{\n"
                             )
                             .indent(level + 1)
                             .as_bytes(),
@@ -1209,9 +1209,11 @@ impl RustOutput {
                 let set = sema.predict_sets[&regex.syntax()]
                     .set(sema.open_predict.contains(&regex.syntax()));
                 output.write_all(
-                    format!("let expected = {set};\nmatch {parser_name}.current(expected, diags) {{\n")
-                        .indent(level)
-                        .as_bytes(),
+                    format!(
+                        "let expected = {set};\nmatch {parser_name}.current(expected, diags) {{\n"
+                    )
+                    .indent(level)
+                    .as_bytes(),
                 )?;
                 let mut advance_error_set = BTreeSet::new();
                 for op in alt.operands(cst) {

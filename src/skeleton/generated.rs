@@ -383,7 +383,7 @@ impl std::fmt::Debug for Rule {{
 
 macro_rules! expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current(&std::collections::HashSet::from_iter([Token::$token]), $diags) {{
+        if let Token::$token = $self.current(enumset::enum_set!(Token::$token), $diags) {{
             $self.advance(false, $diags);
         }} else {{
             $self.error($diags, $msg);
@@ -393,7 +393,7 @@ macro_rules! expect {{
 #[allow(unused_macros)]
 macro_rules! try_expect {{
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {{
-        if let Token::$token = $self.current(&std::collections::HashSet::from_iter([Token::$token]), $diags) {{
+        if let Token::$token = $self.current(enumset::enum_set!(Token::$token), $diags) {{
             $self.advance(false, $diags);
         }} else {{
             if $self.in_ordered_choice {{
@@ -429,10 +429,10 @@ pub struct Parser<'a> {{
 }}
 
 #[allow(dead_code)]
-fn expected_message(expected: &std::collections::HashSet<Token>) -> String {{
+fn expected_message(expected: enumset::EnumSet<Token>) -> String {{
     let symbols: Vec<&str> = TOKEN_SYMBOLS
         .iter()
-        .filter_map(|(token, symbol)| expected.contains(token).then_some(*symbol))
+        .filter_map(|(token, symbol)| expected.contains(*token).then_some(*symbol))
         .collect();
     let mut message = if symbols.is_empty() {{
         "invalid syntax".to_string()
@@ -472,7 +472,7 @@ impl<'a> Parser<'a> {{
         self.error_since_advance = true;
         diags.push(self.create_diagnostic(self.span(), message.into()));
     }}
-    fn token(&mut self, expect: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
+    fn token(&mut self, expect: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {{
         if self.pos < self.tokens.len() {{
             return Some(self.tokens[self.pos])
         }}
@@ -484,7 +484,7 @@ impl<'a> Parser<'a> {{
 
         Some(token)
     }}
-    fn current(&mut self, expect: &std::collections::HashSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {{
+    fn current(&mut self, expect: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {{
         if let Some(token) = self.current {{
             return token;
         }}
@@ -647,11 +647,11 @@ impl<'a> Parser<'a> {{
         rule(&mut self, diags);
 
         self.close_error_node(diags);
-        if self.current(&std::collections::HashSet::new(), diags) != self.end_of_input {{
+        if self.current(enumset::EnumSet::empty(), diags) != self.end_of_input {{
             self.error(diags, "invalid syntax, expected: <end of file>");
             let error_tree = self.open(diags);
 
-            while let token = self.current(&std::collections::HashSet::new(), diags) && token != self.end_of_input {{
+            while let token = self.current(enumset::EnumSet::empty(), diags) && token != self.end_of_input {{
                 self.advance(false, diags);
             }}
 
@@ -665,5 +665,5 @@ impl<'a> Parser<'a> {{
     }}
     /// Returns the CST for a parse of the start rule
     pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {{
-        self.parse_rule(|parser, diags| parser.rule_{2}(&std::collections::HashSet::new(), &std::collections::HashSet::new(), diags), diags, Rule::{3})
+        self.parse_rule(|parser, diags| parser.rule_{2}(enumset::EnumSet::empty(), enumset::EnumSet::empty(), diags), diags, Rule::{3})
     }}

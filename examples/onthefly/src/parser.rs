@@ -11,9 +11,9 @@ pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<()>;
 /// point. The generated parser passes it down from its predict and follow
 /// sets: a single token for `expect!`, the predict set of an alternation or
 /// ordered choice branch, or the follow set of a loop or optional. An empty
-/// slice means the parser asked for a token without an expectation, as it
+/// set means the parser asked for a token without an expectation, as it
 /// does when checking for the end of input.
-pub type LexCall = (usize, Token, Vec<Token>);
+pub type LexCall = (usize, Token, enumset::EnumSet<Token>);
 
 /// Shared audit log of lexer activity.
 ///
@@ -57,7 +57,7 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
     /// Lexes the next token, advancing the lexer state.
     fn lex(
         &mut self,
-        expected: &std::collections::HashSet<Token>,
+        expected: enumset::EnumSet<Token>,
         diags: &mut Vec<Diagnostic>,
     ) -> Option<(Token, Span)> {
         // The parser only asks for a new token once it has consumed all
@@ -119,8 +119,6 @@ impl<'a> ParserCallbacks<'a> for Parser<'a> {
 
         let span = self.state.offset..self.state.offset + len;
         self.state.offset += len;
-        let mut expected: Vec<_> = expected.iter().copied().collect();
-        expected.sort();
         self.context
             .calls
             .borrow_mut()

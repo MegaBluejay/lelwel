@@ -219,7 +219,10 @@ impl CstData {
     }
     fn open_before(&mut self, mark: MarkClosed, is_skipped: fn(Token) -> bool) -> MarkOpened {
         self.flush_open();
-        let from = self.starts.last().map_or(mark.0, |&s| s + 1).max(mark.0);
+        let from = self.starts
+            .last()
+            .map_or(mark.0, |&s| s + 1)
+            .max(mark.0);
         let i = self.nodes[from..]
             .iter()
             .position(|node| match node {
@@ -356,9 +359,7 @@ impl<'a> Cst<'a> {
     }
     /// Returns the slice and span of the node referenced by `node_ref` if it matches `matched_token`.
     pub fn match_token(&self, node_ref: NodeRef, matched_token: Token) -> Option<(&'a str, Span)> {
-        self.data
-            .match_token(node_ref, matched_token)
-            .map(|span| (&self.source[span.clone()], span))
+        self.data.match_token(node_ref, matched_token).map(|span| (&self.source[span.clone()], span))
     }
     /// Checks if the node referenced by `node_ref` matches `matched_rule`.
     pub fn match_rule(&self, node_ref: NodeRef, matched_rule: Rule) -> bool {
@@ -408,46 +409,43 @@ impl std::fmt::Display for Cst<'_> {
 impl std::fmt::Debug for Rule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Rule::Action => write!(f, "action"),
-            Rule::Alternation => write!(f, "alternation"),
-            Rule::Assertion => write!(f, "assertion"),
-            Rule::Commit => write!(f, "commit"),
-            Rule::Concat => write!(f, "concat"),
-            Rule::Decl => write!(f, "decl"),
-            Rule::Error => write!(f, "error"),
-            Rule::File => write!(f, "file"),
-            Rule::Name => write!(f, "name"),
-            Rule::NodeCreation => write!(f, "node_creation"),
-            Rule::NodeElision => write!(f, "node_elision"),
-            Rule::NodeMarker => write!(f, "node_marker"),
-            Rule::NodeRename => write!(f, "node_rename"),
-            Rule::Optional => write!(f, "optional"),
-            Rule::OrderedChoice => write!(f, "ordered_choice"),
-            Rule::Paren => write!(f, "paren"),
-            Rule::PartDecl => write!(f, "part_decl"),
-            Rule::Plus => write!(f, "plus"),
-            Rule::Postfix => write!(f, "postfix"),
-            Rule::Predicate => write!(f, "predicate"),
-            Rule::Regex => write!(f, "regex"),
-            Rule::Return => write!(f, "return"),
-            Rule::RightDecl => write!(f, "right_decl"),
-            Rule::RuleDecl => write!(f, "rule_decl"),
-            Rule::SkipDecl => write!(f, "skip_decl"),
-            Rule::Star => write!(f, "star"),
-            Rule::StartDecl => write!(f, "start_decl"),
-            Rule::Symbol => write!(f, "symbol"),
-            Rule::TokenDecl => write!(f, "token_decl"),
-            Rule::TokenList => write!(f, "token_list"),
+    Rule::Action => write!(f, "action"),
+    Rule::Alternation => write!(f, "alternation"),
+    Rule::Assertion => write!(f, "assertion"),
+    Rule::Commit => write!(f, "commit"),
+    Rule::Concat => write!(f, "concat"),
+    Rule::Decl => write!(f, "decl"),
+    Rule::Error => write!(f, "error"),
+    Rule::File => write!(f, "file"),
+    Rule::Name => write!(f, "name"),
+    Rule::NodeCreation => write!(f, "node_creation"),
+    Rule::NodeElision => write!(f, "node_elision"),
+    Rule::NodeMarker => write!(f, "node_marker"),
+    Rule::NodeRename => write!(f, "node_rename"),
+    Rule::Optional => write!(f, "optional"),
+    Rule::OrderedChoice => write!(f, "ordered_choice"),
+    Rule::Paren => write!(f, "paren"),
+    Rule::PartDecl => write!(f, "part_decl"),
+    Rule::Plus => write!(f, "plus"),
+    Rule::Postfix => write!(f, "postfix"),
+    Rule::Predicate => write!(f, "predicate"),
+    Rule::Regex => write!(f, "regex"),
+    Rule::Return => write!(f, "return"),
+    Rule::RightDecl => write!(f, "right_decl"),
+    Rule::RuleDecl => write!(f, "rule_decl"),
+    Rule::SkipDecl => write!(f, "skip_decl"),
+    Rule::Star => write!(f, "star"),
+    Rule::StartDecl => write!(f, "start_decl"),
+    Rule::Symbol => write!(f, "symbol"),
+    Rule::TokenDecl => write!(f, "token_decl"),
+    Rule::TokenList => write!(f, "token_list"),
         }
     }
 }
 
 macro_rules! expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
-        if let Token::$token = $self.current(
-            &std::collections::HashSet::from_iter([Token::$token]),
-            $diags,
-        ) {
+        if let Token::$token = $self.current(enumset::enum_set!(Token::$token), $diags) {
             $self.advance(false, $diags);
         } else {
             $self.error($diags, $msg);
@@ -457,10 +455,7 @@ macro_rules! expect {
 #[allow(unused_macros)]
 macro_rules! try_expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
-        if let Token::$token = $self.current(
-            &std::collections::HashSet::from_iter([Token::$token]),
-            $diags,
-        ) {
+        if let Token::$token = $self.current(enumset::enum_set!(Token::$token), $diags) {
             $self.advance(false, $diags);
         } else {
             if $self.in_ordered_choice {
@@ -496,10 +491,10 @@ pub struct Parser<'a> {
 }
 
 #[allow(dead_code)]
-fn expected_message(expected: &std::collections::HashSet<Token>) -> String {
+fn expected_message(expected: enumset::EnumSet<Token>) -> String {
     let symbols: Vec<&str> = TOKEN_SYMBOLS
         .iter()
-        .filter_map(|(token, symbol)| expected.contains(token).then_some(*symbol))
+        .filter_map(|(token, symbol)| expected.contains(*token).then_some(*symbol))
         .collect();
     let mut message = if symbols.is_empty() {
         "invalid syntax".to_string()
@@ -531,7 +526,7 @@ impl<'a> Parser<'a> {
     fn error(
         &mut self,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-        message: impl Into<String>,
+        message: impl Into<String>
     ) {
         if self.active_error() {
             return;
@@ -539,13 +534,9 @@ impl<'a> Parser<'a> {
         self.error_since_advance = true;
         diags.push(self.create_diagnostic(self.span(), message.into()));
     }
-    fn token(
-        &mut self,
-        expect: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) -> Option<Token> {
+    fn token(&mut self, expect: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Option<Token> {
         if self.pos < self.tokens.len() {
-            return Some(self.tokens[self.pos]);
+            return Some(self.tokens[self.pos])
         }
 
         let (token, span) = self.lex(expect, diags)?;
@@ -555,24 +546,14 @@ impl<'a> Parser<'a> {
 
         Some(token)
     }
-    fn current(
-        &mut self,
-        expect: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) -> Token {
+    fn current(&mut self, expect: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Token {
         if let Some(token) = self.current {
             return token;
         }
 
         loop {
             match self.token(expect, diags) {
-                Some(
-                    token @ (Token::Error
-                    | Token::LineComment
-                    | Token::BlockComment
-                    | Token::DocComment
-                    | Token::Whitespace),
-                ) => {
+                Some(token @ (Token::Error | Token::LineComment | Token::BlockComment | Token::DocComment | Token::Whitespace)) => {
                     self.pos += 1;
                     self.cst.data.advance(token, true);
                 }
@@ -597,19 +578,12 @@ impl<'a> Parser<'a> {
         self.pos += 1;
     }
     fn is_skipped(token: Token) -> bool {
-        matches!(
-            token,
-            Token::Error
-                | Token::LineComment
-                | Token::BlockComment
-                | Token::DocComment
-                | Token::Whitespace
-        )
+        matches!(token, Token::Error | Token::LineComment | Token::BlockComment | Token::DocComment | Token::Whitespace)
     }
     fn advance_with_error(
         &mut self,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-        message: impl Into<String>,
+        message: impl Into<String>
     ) {
         self.error(diags, message);
         if self.error_node.is_none() {
@@ -628,29 +602,15 @@ impl<'a> Parser<'a> {
         self.close_error_node(diags);
         self.cst.data.open()
     }
-    fn open_before(
-        &mut self,
-        mark: MarkClosed,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) -> MarkOpened {
+    fn open_before(&mut self, mark: MarkClosed, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkOpened {
         self.close_error_node(diags);
         self.cst.data.open_before(mark, Self::is_skipped)
     }
-    fn close(
-        &mut self,
-        mark: MarkOpened,
-        rule: Rule,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) -> MarkClosed {
+    fn close(&mut self, mark: MarkOpened, rule: Rule, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkClosed {
         self.close_error_node(diags);
         self.cst.data.close(mark, rule)
     }
-    fn close_root(
-        &mut self,
-        mark: MarkOpened,
-        rule: Rule,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) -> MarkClosed {
+    fn close_root(&mut self, mark: MarkOpened, rule: Rule, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkClosed {
         self.close_error_node(diags);
         self.cst.data.close_root(mark, rule)
     }
@@ -659,17 +619,12 @@ impl<'a> Parser<'a> {
         self.cst.data.mark()
     }
     fn span(&self) -> Span {
-        self.cst
-            .data
-            .spans
+        self.cst.data.spans
             .get(self.pos)
             .map_or(self.max_offset..self.max_offset, |span| span.clone())
     }
     #[allow(clippy::clone_on_copy, clippy::unit_arg)]
-    fn get_state(
-        &self,
-        diags: &[<Self as ParserCallbacks<'a>>::Diagnostic],
-    ) -> ParserState<<Self as ParserCallbacks<'a>>::State> {
+    fn get_state(&self, diags: &[<Self as ParserCallbacks<'a>>::Diagnostic]) -> ParserState<<Self as ParserCallbacks<'a>>::State> {
         ParserState {
             pos: self.pos,
             current: self.current,
@@ -683,7 +638,7 @@ impl<'a> Parser<'a> {
     fn set_state(
         &mut self,
         state: &ParserState<<Self as ParserCallbacks<'a>>::State>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>
     ) {
         self.pos = state.pos;
         self.current = state.current;
@@ -702,7 +657,7 @@ impl<'a> Parser<'a> {
         &mut self,
         rule: Rule,
         node_ref: NodeRef,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>
     ) {
         match rule {
             Rule::Action => self.create_node_action(node_ref, diags),
@@ -737,7 +692,9 @@ impl<'a> Parser<'a> {
             Rule::TokenList => self.create_node_token_list(node_ref, diags),
         }
     }
-    fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {}
+    fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {
+        
+    }
     pub fn new_with_context(
         source: &'a str,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
@@ -749,10 +706,7 @@ impl<'a> Parser<'a> {
         Self {
             current: None,
             end_of_input: Token::EOF,
-            cst: Cst {
-                data: CstData::new(spans),
-                source,
-            },
+            cst: Cst { data: CstData::new(spans), source },
             tokens,
             pos: 0,
             max_offset,
@@ -772,16 +726,9 @@ impl<'a> Parser<'a> {
         for<'trivial_bound> <Self as ParserCallbacks<'a>>::State: Default,
     {
         #[allow(clippy::unit_arg)]
-        Self::new_with_context(
-            source,
-            diags,
-            <Self as ParserCallbacks<'a>>::Context::default(),
-            <Self as ParserCallbacks<'a>>::State::default(),
-        )
+        Self::new_with_context(source, diags, <Self as ParserCallbacks<'a>>::Context::default(), <Self as ParserCallbacks<'a>>::State::default())
     }
-    fn parse_rule<
-        RuleParser: Fn(&mut Self, &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>),
-    >(
+    fn parse_rule<RuleParser: Fn(&mut Self, &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>)>(
         mut self,
         rule: RuleParser,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
@@ -792,13 +739,11 @@ impl<'a> Parser<'a> {
         rule(&mut self, diags);
 
         self.close_error_node(diags);
-        if self.current(&std::collections::HashSet::new(), diags) != self.end_of_input {
+        if self.current(enumset::EnumSet::empty(), diags) != self.end_of_input {
             self.error(diags, "invalid syntax, expected: <end of file>");
             let error_tree = self.open(diags);
 
-            while let token = self.current(&std::collections::HashSet::new(), diags)
-                && token != self.end_of_input
-            {
+            while let token = self.current(enumset::EnumSet::empty(), diags) && token != self.end_of_input {
                 self.advance(false, diags);
             }
 
@@ -812,34 +757,11 @@ impl<'a> Parser<'a> {
     }
     /// Returns the CST for a parse of the start rule
     pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {
-        self.parse_rule(
-            |parser, diags| {
-                parser.rule_file(
-                    &std::collections::HashSet::new(),
-                    &std::collections::HashSet::new(),
-                    diags,
-                )
-            },
-            diags,
-            Rule::File,
-        )
+        self.parse_rule(|parser, diags| parser.rule_file(enumset::EnumSet::empty(), enumset::EnumSet::empty(), diags), diags, Rule::File)
     }
     #[allow(unused_variables)]
-    fn rule_file(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
-        let expected = &(&std::collections::HashSet::<Token>::from_iter([
-            Token::EOF,
-            Token::Id,
-            Token::Part,
-            Token::Right,
-            Token::Skip,
-            Token::Start,
-            Token::Token,
-        ]) | follow);
+    fn rule_file(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+        let expected = (enumset::enum_set!(Token::EOF | Token::Id | Token::Part | Token::Right | Token::Skip | Token::Start | Token::Token) | follow);
         loop {
             match self.current(expected, diags) {
                 Token::Id
@@ -848,36 +770,10 @@ impl<'a> Parser<'a> {
                 | Token::Skip
                 | Token::Start
                 | Token::Token => {
-                    self.rule_decl(
-                        &(&std::collections::HashSet::<Token>::from_iter([
-                            Token::EOF,
-                            Token::Id,
-                            Token::Part,
-                            Token::Right,
-                            Token::Skip,
-                            Token::Start,
-                            Token::Token,
-                        ]) | follow),
-                        &(&std::collections::HashSet::<Token>::from_iter([
-                            Token::EOF,
-                            Token::Id,
-                            Token::Part,
-                            Token::Right,
-                            Token::Skip,
-                            Token::Start,
-                            Token::Token,
-                        ]) | recover),
-                        diags,
-                    );
+                    self.rule_decl((enumset::enum_set!(Token::EOF | Token::Id | Token::Part | Token::Right | Token::Skip | Token::Start | Token::Token) | follow), (enumset::enum_set!(Token::EOF | Token::Id | Token::Part | Token::Right | Token::Skip | Token::Start | Token::Token) | recover), diags);
                 }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([Token::EOF]) | follow))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if ((enumset::enum_set!(Token::EOF) | follow)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -888,62 +784,26 @@ impl<'a> Parser<'a> {
         }
     }
     #[allow(unused_variables)]
-    fn rule_decl(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
-        let expected = &std::collections::HashSet::<Token>::from_iter([
-            Token::Id,
-            Token::Part,
-            Token::Right,
-            Token::Skip,
-            Token::Start,
-            Token::Token,
-        ]);
+    fn rule_decl(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+        let expected = enumset::enum_set!(Token::Id | Token::Part | Token::Right | Token::Skip | Token::Start | Token::Token);
         match self.current(expected, diags) {
             Token::Token => {
-                self.rule_token_list(
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | follow),
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | recover),
-                    diags,
-                );
+                self.rule_token_list((enumset::EnumSet::empty() | follow), (enumset::EnumSet::empty() | recover), diags);
             }
             Token::Id if self.predicate_decl_1() => {
-                self.rule_rule_decl(
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | follow),
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | recover),
-                    diags,
-                );
+                self.rule_rule_decl((enumset::EnumSet::empty() | follow), (enumset::EnumSet::empty() | recover), diags);
             }
             Token::Start => {
-                self.rule_start_decl(
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | follow),
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | recover),
-                    diags,
-                );
+                self.rule_start_decl((enumset::EnumSet::empty() | follow), (enumset::EnumSet::empty() | recover), diags);
             }
             Token::Right => {
-                self.rule_right_decl(
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | follow),
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | recover),
-                    diags,
-                );
+                self.rule_right_decl((enumset::EnumSet::empty() | follow), (enumset::EnumSet::empty() | recover), diags);
             }
             Token::Skip => {
-                self.rule_skip_decl(
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | follow),
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | recover),
-                    diags,
-                );
+                self.rule_skip_decl((enumset::EnumSet::empty() | follow), (enumset::EnumSet::empty() | recover), diags);
             }
             Token::Part => {
-                self.rule_part_decl(
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | follow),
-                    &(&std::collections::HashSet::<Token>::from_iter([]) | recover),
-                    diags,
-                );
+                self.rule_part_decl((enumset::EnumSet::empty() | follow), (enumset::EnumSet::empty() | recover), diags);
             }
             Token::Id => {
                 self.advance_with_error(diags, "invalid syntax");
@@ -954,77 +814,51 @@ impl<'a> Parser<'a> {
         }
     }
     #[allow(unused_variables)]
-    fn rule_start_decl(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_start_decl(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Start, "invalid syntax, expected: \'start\'", self, diags);
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
         expect!(Semi, "invalid syntax, expected: \';\'", self, diags);
         let closed = self.close(m, Rule::StartDecl, diags);
         self.create_node_start_decl(NodeRef(closed.0), diags);
+
     }
     #[allow(unused_variables)]
-    fn rule_right_decl(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_right_decl(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Right, "invalid syntax, expected: \'right\'", self, diags);
-        let expected = &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Str]);
+        let expected = enumset::enum_set!(Token::Id | Token::Str);
         match self.current(expected, diags) {
             Token::Id => {
                 expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
             }
             Token::Str => {
-                expect!(
-                    Str,
-                    "invalid syntax, expected: <string literal>",
-                    self,
-                    diags
-                );
+                expect!(Str, "invalid syntax, expected: <string literal>", self, diags);
             }
             _ => {
                 self.error(diags, expected_message(expected));
             }
         }
-        let expected =
-            &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi, Token::Str]);
+        let expected = enumset::enum_set!(Token::Id | Token::Semi | Token::Str);
         loop {
             match self.current(expected, diags) {
-                Token::Id | Token::Str => {
-                    let expected =
-                        &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Str]);
+                Token::Id
+                | Token::Str => {
+                    let expected = enumset::enum_set!(Token::Id | Token::Str);
                     match self.current(expected, diags) {
                         Token::Id => {
                             expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
                         }
                         Token::Str => {
-                            expect!(
-                                Str,
-                                "invalid syntax, expected: <string literal>",
-                                self,
-                                diags
-                            );
+                            expect!(Str, "invalid syntax, expected: <string literal>", self, diags);
                         }
                         _ => {
                             self.error(diags, expected_message(expected));
                         }
                     }
                 }
-                c if (&std::collections::HashSet::<Token>::from_iter([Token::Semi]))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1036,65 +870,44 @@ impl<'a> Parser<'a> {
         expect!(Semi, "invalid syntax, expected: \';\'", self, diags);
         let closed = self.close(m, Rule::RightDecl, diags);
         self.create_node_right_decl(NodeRef(closed.0), diags);
+
     }
     #[allow(unused_variables)]
-    fn rule_skip_decl(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_skip_decl(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Skip, "invalid syntax, expected: \'skip\'", self, diags);
-        let expected = &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Str]);
+        let expected = enumset::enum_set!(Token::Id | Token::Str);
         match self.current(expected, diags) {
             Token::Id => {
                 expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
             }
             Token::Str => {
-                expect!(
-                    Str,
-                    "invalid syntax, expected: <string literal>",
-                    self,
-                    diags
-                );
+                expect!(Str, "invalid syntax, expected: <string literal>", self, diags);
             }
             _ => {
                 self.error(diags, expected_message(expected));
             }
         }
-        let expected =
-            &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi, Token::Str]);
+        let expected = enumset::enum_set!(Token::Id | Token::Semi | Token::Str);
         loop {
             match self.current(expected, diags) {
-                Token::Id | Token::Str => {
-                    let expected =
-                        &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Str]);
+                Token::Id
+                | Token::Str => {
+                    let expected = enumset::enum_set!(Token::Id | Token::Str);
                     match self.current(expected, diags) {
                         Token::Id => {
                             expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
                         }
                         Token::Str => {
-                            expect!(
-                                Str,
-                                "invalid syntax, expected: <string literal>",
-                                self,
-                                diags
-                            );
+                            expect!(Str, "invalid syntax, expected: <string literal>", self, diags);
                         }
                         _ => {
                             self.error(diags, expected_message(expected));
                         }
                     }
                 }
-                c if (&std::collections::HashSet::<Token>::from_iter([Token::Semi]))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1106,31 +919,21 @@ impl<'a> Parser<'a> {
         expect!(Semi, "invalid syntax, expected: \';\'", self, diags);
         let closed = self.close(m, Rule::SkipDecl, diags);
         self.create_node_skip_decl(NodeRef(closed.0), diags);
+
     }
     #[allow(unused_variables)]
-    fn rule_part_decl(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_part_decl(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Part, "invalid syntax, expected: \'part\'", self, diags);
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
-        let expected = &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi]);
+        let expected = enumset::enum_set!(Token::Id | Token::Semi);
         loop {
             match self.current(expected, diags) {
                 Token::Id => {
                     expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
                 }
-                c if (&std::collections::HashSet::<Token>::from_iter([Token::Semi]))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1142,40 +945,21 @@ impl<'a> Parser<'a> {
         expect!(Semi, "invalid syntax, expected: \';\'", self, diags);
         let closed = self.close(m, Rule::PartDecl, diags);
         self.create_node_part_decl(NodeRef(closed.0), diags);
+
     }
     #[allow(unused_variables)]
-    fn rule_token_list(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_token_list(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Token, "invalid syntax, expected: \'token\'", self, diags);
-        self.rule_token_decl(
-            &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi]),
-            &(&std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi]) | recover),
-            diags,
-        );
-        let expected = &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi]);
+        self.rule_token_decl(enumset::enum_set!(Token::Id | Token::Semi), (enumset::enum_set!(Token::Id | Token::Semi) | recover), diags);
+        let expected = enumset::enum_set!(Token::Id | Token::Semi);
         loop {
             match self.current(expected, diags) {
                 Token::Id => {
-                    self.rule_token_decl(
-                        &std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi]),
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Id, Token::Semi])
-                            | recover),
-                        diags,
-                    );
+                    self.rule_token_decl(enumset::enum_set!(Token::Id | Token::Semi), (enumset::enum_set!(Token::Id | Token::Semi) | recover), diags);
                 }
-                c if (&std::collections::HashSet::<Token>::from_iter([Token::Semi]))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1187,37 +971,22 @@ impl<'a> Parser<'a> {
         expect!(Semi, "invalid syntax, expected: \';\'", self, diags);
         let closed = self.close(m, Rule::TokenList, diags);
         self.create_node_token_list(NodeRef(closed.0), diags);
+
     }
     #[allow(unused_variables)]
-    fn rule_token_decl(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_token_decl(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
-        let expected = &(&std::collections::HashSet::<Token>::from_iter([Token::Equal]) | follow);
+        let expected = (enumset::enum_set!(Token::Equal) | follow);
         loop {
             match self.current(expected, diags) {
                 Token::Equal => {
                     expect!(Equal, "invalid syntax, expected: \'=\'", self, diags);
-                    expect!(
-                        Str,
-                        "invalid syntax, expected: <string literal>",
-                        self,
-                        diags
-                    );
+                    expect!(Str, "invalid syntax, expected: <string literal>", self, diags);
                     break;
                 }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | follow))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if ((enumset::EnumSet::empty() | follow)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1228,31 +997,21 @@ impl<'a> Parser<'a> {
         }
         let closed = self.close(m, Rule::TokenDecl, diags);
         self.create_node_token_decl(NodeRef(closed.0), diags);
+
     }
     #[allow(unused_variables)]
-    fn rule_rule_decl(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_rule_decl(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let m = self.open(diags);
         expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
-        let expected = &std::collections::HashSet::<Token>::from_iter([Token::Colon, Token::Hat]);
+        let expected = enumset::enum_set!(Token::Colon | Token::Hat);
         loop {
             match self.current(expected, diags) {
                 Token::Hat => {
                     expect!(Hat, "invalid syntax, expected: \'^\'", self, diags);
                     break;
                 }
-                c if (&std::collections::HashSet::<Token>::from_iter([Token::Colon]))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if (enumset::enum_set!(Token::Colon)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1262,22 +1021,7 @@ impl<'a> Parser<'a> {
             }
         }
         expect!(Colon, "invalid syntax, expected: \':\'", self, diags);
-        let expected = &std::collections::HashSet::<Token>::from_iter([
-            Token::Action,
-            Token::And,
-            Token::Assertion,
-            Token::Hat,
-            Token::Id,
-            Token::LBrak,
-            Token::LPar,
-            Token::NodeCreation,
-            Token::NodeMarker,
-            Token::NodeRename,
-            Token::Predicate,
-            Token::Semi,
-            Token::Str,
-            Token::Tilde,
-        ]);
+        let expected = enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Semi | Token::Str | Token::Tilde);
         loop {
             match self.current(expected, diags) {
                 Token::Action
@@ -1293,21 +1037,11 @@ impl<'a> Parser<'a> {
                 | Token::Predicate
                 | Token::Str
                 | Token::Tilde => {
-                    self.rule_regex(
-                        &std::collections::HashSet::<Token>::from_iter([Token::Semi]),
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Semi]) | recover),
-                        diags,
-                    );
+                    self.rule_regex(enumset::enum_set!(Token::Semi), (enumset::enum_set!(Token::Semi) | recover), diags);
                     break;
                 }
-                c if (&std::collections::HashSet::<Token>::from_iter([Token::Semi]))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1319,67 +1053,31 @@ impl<'a> Parser<'a> {
         expect!(Semi, "invalid syntax, expected: \';\'", self, diags);
         let closed = self.close(m, Rule::RuleDecl, diags);
         self.create_node_rule_decl(NodeRef(closed.0), diags);
+
     }
     #[allow(unused_variables)]
-    fn rule_regex(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
-        self.rule_alternation(
-            &(&std::collections::HashSet::<Token>::from_iter([]) | follow),
-            &(&std::collections::HashSet::<Token>::from_iter([]) | recover),
-            diags,
-        );
+    fn rule_regex(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+        self.rule_alternation((enumset::EnumSet::empty() | follow), (enumset::EnumSet::empty() | recover), diags);
     }
     #[allow(unused_variables)]
-    fn rule_alternation(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_alternation(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let start = self.mark(diags);
-        self.rule_ordered_choice(
-            &(&std::collections::HashSet::<Token>::from_iter([Token::Or]) | follow),
-            &(&std::collections::HashSet::<Token>::from_iter([Token::Or]) | recover),
-            diags,
-        );
-        let expected = &(&std::collections::HashSet::<Token>::from_iter([Token::Or]) | follow);
+        self.rule_ordered_choice((enumset::enum_set!(Token::Or) | follow), (enumset::enum_set!(Token::Or) | recover), diags);
+        let expected = (enumset::enum_set!(Token::Or) | follow);
         loop {
             match self.current(expected, diags) {
                 Token::Or => {
                     expect!(Or, "invalid syntax, expected: \'|\'", self, diags);
-                    self.rule_ordered_choice(
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Or]) | follow),
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Or]) | recover),
-                        diags,
-                    );
-                    let expected =
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Or]) | follow);
+                    self.rule_ordered_choice((enumset::enum_set!(Token::Or) | follow), (enumset::enum_set!(Token::Or) | recover), diags);
+                    let expected = (enumset::enum_set!(Token::Or) | follow);
                     loop {
                         match self.current(expected, diags) {
                             Token::Or => {
                                 expect!(Or, "invalid syntax, expected: \'|\'", self, diags);
-                                self.rule_ordered_choice(
-                                    &(&std::collections::HashSet::<Token>::from_iter([Token::Or])
-                                        | follow),
-                                    &(&std::collections::HashSet::<Token>::from_iter([Token::Or])
-                                        | recover),
-                                    diags,
-                                );
+                                self.rule_ordered_choice((enumset::enum_set!(Token::Or) | follow), (enumset::enum_set!(Token::Or) | recover), diags);
                             }
-                            c if (&(&std::collections::HashSet::<Token>::from_iter([])
-                                | follow))
-                                .contains(&c) =>
-                            {
-                                break;
-                            }
-                            c if (&(&std::collections::HashSet::<Token>::from_iter([])
-                                | recover))
-                                .contains(&c) =>
-                            {
+                            c if ((enumset::EnumSet::empty() | follow)).contains(c) => break,
+                            c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                                 self.error(diags, expected_message(expected));
                                 break;
                             }
@@ -1393,14 +1091,8 @@ impl<'a> Parser<'a> {
                     self.create_node_alternation(NodeRef(closed.0), diags);
                     break;
                 }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | follow))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if ((enumset::EnumSet::empty() | follow)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1411,54 +1103,24 @@ impl<'a> Parser<'a> {
         }
     }
     #[allow(unused_variables)]
-    fn rule_ordered_choice(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_ordered_choice(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let start = self.mark(diags);
-        self.rule_concat(
-            &(&std::collections::HashSet::<Token>::from_iter([Token::Slash]) | follow),
-            &(&std::collections::HashSet::<Token>::from_iter([Token::Slash]) | recover),
-            diags,
-        );
-        let expected = &(&std::collections::HashSet::<Token>::from_iter([Token::Slash]) | follow);
+        self.rule_concat((enumset::enum_set!(Token::Slash) | follow), (enumset::enum_set!(Token::Slash) | recover), diags);
+        let expected = (enumset::enum_set!(Token::Slash) | follow);
         loop {
             match self.current(expected, diags) {
                 Token::Slash => {
                     expect!(Slash, "invalid syntax, expected: \'/\'", self, diags);
-                    self.rule_concat(
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Slash]) | follow),
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Slash]) | recover),
-                        diags,
-                    );
-                    let expected =
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::Slash]) | follow);
+                    self.rule_concat((enumset::enum_set!(Token::Slash) | follow), (enumset::enum_set!(Token::Slash) | recover), diags);
+                    let expected = (enumset::enum_set!(Token::Slash) | follow);
                     loop {
                         match self.current(expected, diags) {
                             Token::Slash => {
                                 expect!(Slash, "invalid syntax, expected: \'/\'", self, diags);
-                                self.rule_concat(
-                                    &(&std::collections::HashSet::<Token>::from_iter([
-                                        Token::Slash,
-                                    ]) | follow),
-                                    &(&std::collections::HashSet::<Token>::from_iter([
-                                        Token::Slash,
-                                    ]) | recover),
-                                    diags,
-                                );
+                                self.rule_concat((enumset::enum_set!(Token::Slash) | follow), (enumset::enum_set!(Token::Slash) | recover), diags);
                             }
-                            c if (&(&std::collections::HashSet::<Token>::from_iter([])
-                                | follow))
-                                .contains(&c) =>
-                            {
-                                break;
-                            }
-                            c if (&(&std::collections::HashSet::<Token>::from_iter([])
-                                | recover))
-                                .contains(&c) =>
-                            {
+                            c if ((enumset::EnumSet::empty() | follow)).contains(c) => break,
+                            c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                                 self.error(diags, expected_message(expected));
                                 break;
                             }
@@ -1472,14 +1134,8 @@ impl<'a> Parser<'a> {
                     self.create_node_ordered_choice(NodeRef(closed.0), diags);
                     break;
                 }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | follow))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if ((enumset::EnumSet::empty() | follow)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1490,61 +1146,10 @@ impl<'a> Parser<'a> {
         }
     }
     #[allow(unused_variables)]
-    fn rule_concat(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_concat(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         let start = self.mark(diags);
-        self.rule_postfix(
-            &(&std::collections::HashSet::<Token>::from_iter([
-                Token::Action,
-                Token::And,
-                Token::Assertion,
-                Token::Hat,
-                Token::Id,
-                Token::LBrak,
-                Token::LPar,
-                Token::NodeCreation,
-                Token::NodeMarker,
-                Token::NodeRename,
-                Token::Predicate,
-                Token::Str,
-                Token::Tilde,
-            ]) | follow),
-            &(&std::collections::HashSet::<Token>::from_iter([
-                Token::Action,
-                Token::And,
-                Token::Assertion,
-                Token::Hat,
-                Token::Id,
-                Token::LBrak,
-                Token::LPar,
-                Token::NodeCreation,
-                Token::NodeMarker,
-                Token::NodeRename,
-                Token::Predicate,
-                Token::Str,
-                Token::Tilde,
-            ]) | recover),
-            diags,
-        );
-        let expected = &(&std::collections::HashSet::<Token>::from_iter([
-            Token::Action,
-            Token::And,
-            Token::Assertion,
-            Token::Hat,
-            Token::Id,
-            Token::LBrak,
-            Token::LPar,
-            Token::NodeCreation,
-            Token::NodeMarker,
-            Token::NodeRename,
-            Token::Predicate,
-            Token::Str,
-            Token::Tilde,
-        ]) | follow);
+        self.rule_postfix((enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | follow), (enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | recover), diags);
+        let expected = (enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | follow);
         loop {
             match self.current(expected, diags) {
                 Token::Action
@@ -1560,54 +1165,8 @@ impl<'a> Parser<'a> {
                 | Token::Predicate
                 | Token::Str
                 | Token::Tilde => {
-                    self.rule_postfix(
-                        &(&std::collections::HashSet::<Token>::from_iter([
-                            Token::Action,
-                            Token::And,
-                            Token::Assertion,
-                            Token::Hat,
-                            Token::Id,
-                            Token::LBrak,
-                            Token::LPar,
-                            Token::NodeCreation,
-                            Token::NodeMarker,
-                            Token::NodeRename,
-                            Token::Predicate,
-                            Token::Str,
-                            Token::Tilde,
-                        ]) | follow),
-                        &(&std::collections::HashSet::<Token>::from_iter([
-                            Token::Action,
-                            Token::And,
-                            Token::Assertion,
-                            Token::Hat,
-                            Token::Id,
-                            Token::LBrak,
-                            Token::LPar,
-                            Token::NodeCreation,
-                            Token::NodeMarker,
-                            Token::NodeRename,
-                            Token::Predicate,
-                            Token::Str,
-                            Token::Tilde,
-                        ]) | recover),
-                        diags,
-                    );
-                    let expected = &(&std::collections::HashSet::<Token>::from_iter([
-                        Token::Action,
-                        Token::And,
-                        Token::Assertion,
-                        Token::Hat,
-                        Token::Id,
-                        Token::LBrak,
-                        Token::LPar,
-                        Token::NodeCreation,
-                        Token::NodeMarker,
-                        Token::NodeRename,
-                        Token::Predicate,
-                        Token::Str,
-                        Token::Tilde,
-                    ]) | follow);
+                    self.rule_postfix((enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | follow), (enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | recover), diags);
+                    let expected = (enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | follow);
                     loop {
                         match self.current(expected, diags) {
                             Token::Action
@@ -1623,50 +1182,10 @@ impl<'a> Parser<'a> {
                             | Token::Predicate
                             | Token::Str
                             | Token::Tilde => {
-                                self.rule_postfix(
-                                    &(&std::collections::HashSet::<Token>::from_iter([
-                                        Token::Action,
-                                        Token::And,
-                                        Token::Assertion,
-                                        Token::Hat,
-                                        Token::Id,
-                                        Token::LBrak,
-                                        Token::LPar,
-                                        Token::NodeCreation,
-                                        Token::NodeMarker,
-                                        Token::NodeRename,
-                                        Token::Predicate,
-                                        Token::Str,
-                                        Token::Tilde,
-                                    ]) | follow),
-                                    &(&std::collections::HashSet::<Token>::from_iter([
-                                        Token::Action,
-                                        Token::And,
-                                        Token::Assertion,
-                                        Token::Hat,
-                                        Token::Id,
-                                        Token::LBrak,
-                                        Token::LPar,
-                                        Token::NodeCreation,
-                                        Token::NodeMarker,
-                                        Token::NodeRename,
-                                        Token::Predicate,
-                                        Token::Str,
-                                        Token::Tilde,
-                                    ]) | recover),
-                                    diags,
-                                );
+                                self.rule_postfix((enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | follow), (enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde) | recover), diags);
                             }
-                            c if (&(&std::collections::HashSet::<Token>::from_iter([])
-                                | follow))
-                                .contains(&c) =>
-                            {
-                                break;
-                            }
-                            c if (&(&std::collections::HashSet::<Token>::from_iter([])
-                                | recover))
-                                .contains(&c) =>
-                            {
+                            c if ((enumset::EnumSet::empty() | follow)).contains(c) => break,
+                            c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                                 self.error(diags, expected_message(expected));
                                 break;
                             }
@@ -1680,14 +1199,8 @@ impl<'a> Parser<'a> {
                     self.create_node_concat(NodeRef(closed.0), diags);
                     break;
                 }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | follow))
-                    .contains(&c) =>
-                {
-                    break;
-                }
-                c if (&(&std::collections::HashSet::<Token>::from_iter([]) | recover))
-                    .contains(&c) =>
-                {
+                c if ((enumset::EnumSet::empty() | follow)).contains(c) => break,
+                c if ((enumset::EnumSet::empty() | recover)).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
                 }
@@ -1699,56 +1212,22 @@ impl<'a> Parser<'a> {
     }
     #[allow(unused_assignments)]
     #[allow(unused_variables)]
-    fn rule_postfix(
-        &mut self,
-        follow: &std::collections::HashSet<Token>,
-        recover: &std::collections::HashSet<Token>,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
+    fn rule_postfix(&mut self, follow: enumset::EnumSet<Token>, recover: enumset::EnumSet<Token>, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
         #[allow(unused_variables)]
         fn rec<'a>(
             parser: &mut Parser<'a>,
-            follow: &std::collections::HashSet<Token>,
-            recover: &std::collections::HashSet<Token>,
+            follow: enumset::EnumSet<Token>,
+            recover: enumset::EnumSet<Token>,
             diags: &mut Vec<<Parser<'a> as ParserCallbacks<'a>>::Diagnostic>,
             mut lhs: MarkClosed,
         ) {
             let mut node_kind = Rule::Postfix;
-            let expected = &std::collections::HashSet::<Token>::from_iter([
-                Token::Action,
-                Token::And,
-                Token::Assertion,
-                Token::Hat,
-                Token::Id,
-                Token::LBrak,
-                Token::LPar,
-                Token::NodeCreation,
-                Token::NodeMarker,
-                Token::NodeRename,
-                Token::Predicate,
-                Token::Str,
-                Token::Tilde,
-            ]);
+            let expected = enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde);
             match parser.current(expected, diags) {
                 Token::LPar => {
                     let m = parser.open(diags);
                     expect!(LPar, "invalid syntax, expected: \'(\'", parser, diags);
-                    let expected = &std::collections::HashSet::<Token>::from_iter([
-                        Token::Action,
-                        Token::And,
-                        Token::Assertion,
-                        Token::Hat,
-                        Token::Id,
-                        Token::LBrak,
-                        Token::LPar,
-                        Token::NodeCreation,
-                        Token::NodeMarker,
-                        Token::NodeRename,
-                        Token::Predicate,
-                        Token::RPar,
-                        Token::Str,
-                        Token::Tilde,
-                    ]);
+                    let expected = enumset::enum_set!(Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker | Token::NodeRename | Token::Predicate | Token::RPar | Token::Str | Token::Tilde);
                     loop {
                         match parser.current(expected, diags) {
                             Token::Action
@@ -1764,28 +1243,11 @@ impl<'a> Parser<'a> {
                             | Token::Predicate
                             | Token::Str
                             | Token::Tilde => {
-                                parser.rule_regex(
-                                    &std::collections::HashSet::<Token>::from_iter([Token::RPar]),
-                                    &(&std::collections::HashSet::<Token>::from_iter([
-                                        Token::RPar,
-                                    ]) | recover),
-                                    diags,
-                                );
+                                parser.rule_regex(enumset::enum_set!(Token::RPar), (enumset::enum_set!(Token::RPar) | recover), diags);
                                 break;
                             }
-                            c if (&std::collections::HashSet::<Token>::from_iter([
-                                Token::RPar,
-                            ]))
-                                .contains(&c) =>
-                            {
-                                break;
-                            }
-                            c if (&(&std::collections::HashSet::<Token>::from_iter([
-                                Token::Plus,
-                                Token::Star,
-                            ]) | recover))
-                                .contains(&c) =>
-                            {
+                            c if (enumset::enum_set!(Token::RPar)).contains(c) => break,
+                            c if ((enumset::enum_set!(Token::Plus | Token::Star) | recover)).contains(c) => {
                                 parser.error(diags, expected_message(expected));
                                 break;
                             }
@@ -1798,19 +1260,17 @@ impl<'a> Parser<'a> {
                     node_kind = Rule::Paren;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::LBrak => {
                     let m = parser.open(diags);
                     expect!(LBrak, "invalid syntax, expected: \'[\'", parser, diags);
-                    parser.rule_regex(
-                        &std::collections::HashSet::<Token>::from_iter([Token::RBrak]),
-                        &(&std::collections::HashSet::<Token>::from_iter([Token::RBrak]) | recover),
-                        diags,
-                    );
+                    parser.rule_regex(enumset::enum_set!(Token::RBrak), (enumset::enum_set!(Token::RBrak) | recover), diags);
                     expect!(RBrak, "invalid syntax, expected: \']\'", parser, diags);
                     node_kind = Rule::Optional;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::Id => {
                     let m = parser.open(diags);
@@ -1818,90 +1278,63 @@ impl<'a> Parser<'a> {
                     node_kind = Rule::Name;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::Str => {
                     let m = parser.open(diags);
-                    expect!(
-                        Str,
-                        "invalid syntax, expected: <string literal>",
-                        parser,
-                        diags
-                    );
+                    expect!(Str, "invalid syntax, expected: <string literal>", parser, diags);
                     node_kind = Rule::Symbol;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::Predicate => {
                     let m = parser.open(diags);
-                    expect!(
-                        Predicate,
-                        "invalid syntax, expected: <semantic predicate>",
-                        parser,
-                        diags
-                    );
+                    expect!(Predicate, "invalid syntax, expected: <semantic predicate>", parser, diags);
                     node_kind = Rule::Predicate;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::Action => {
                     let m = parser.open(diags);
-                    expect!(
-                        Action,
-                        "invalid syntax, expected: <semantic action>",
-                        parser,
-                        diags
-                    );
+                    expect!(Action, "invalid syntax, expected: <semantic action>", parser, diags);
                     node_kind = Rule::Action;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::Assertion => {
                     let m = parser.open(diags);
-                    expect!(
-                        Assertion,
-                        "invalid syntax, expected: <semantic assertion>",
-                        parser,
-                        diags
-                    );
+                    expect!(Assertion, "invalid syntax, expected: <semantic assertion>", parser, diags);
                     node_kind = Rule::Assertion;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::NodeRename => {
                     let m = parser.open(diags);
-                    expect!(
-                        NodeRename,
-                        "invalid syntax, expected: <node rename>",
-                        parser,
-                        diags
-                    );
+                    expect!(NodeRename, "invalid syntax, expected: <node rename>", parser, diags);
                     node_kind = Rule::NodeRename;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::NodeMarker => {
                     let m = parser.open(diags);
-                    expect!(
-                        NodeMarker,
-                        "invalid syntax, expected: <node marker>",
-                        parser,
-                        diags
-                    );
+                    expect!(NodeMarker, "invalid syntax, expected: <node marker>", parser, diags);
                     node_kind = Rule::NodeMarker;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::NodeCreation => {
                     let m = parser.open(diags);
-                    expect!(
-                        NodeCreation,
-                        "invalid syntax, expected: <node creation>",
-                        parser,
-                        diags
-                    );
+                    expect!(NodeCreation, "invalid syntax, expected: <node creation>", parser, diags);
                     node_kind = Rule::NodeCreation;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::Hat => {
                     let m = parser.open(diags);
@@ -1909,6 +1342,7 @@ impl<'a> Parser<'a> {
                     node_kind = Rule::NodeElision;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::Tilde => {
                     let m = parser.open(diags);
@@ -1916,6 +1350,7 @@ impl<'a> Parser<'a> {
                     node_kind = Rule::Commit;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 Token::And => {
                     let m = parser.open(diags);
@@ -1923,6 +1358,7 @@ impl<'a> Parser<'a> {
                     node_kind = Rule::Return;
                     let closed = parser.close(m, node_kind, diags);
                     parser.create_node(node_kind, NodeRef(closed.0), diags);
+
                 }
                 _ => {
                     parser.error(diags, expected_message(expected));
@@ -1930,11 +1366,7 @@ impl<'a> Parser<'a> {
             }
             loop {
                 node_kind = Rule::Postfix;
-                match parser.current(
-                    &(&std::collections::HashSet::<Token>::from_iter([Token::Plus, Token::Star])
-                        | follow),
-                    diags,
-                ) {
+                match parser.current((enumset::enum_set!(Token::Plus | Token::Star) | follow), diags) {
                     Token::Star => {
                         let m = parser.open_before(lhs, diags);
                         expect!(Star, "invalid syntax, expected: \'*\'", parser, diags);
@@ -2005,18 +1437,11 @@ pub trait ParserCallbacks<'a> {
     type Diagnostic;
     type Context;
     type State: Clone;
+            
 
     /// Called at the start of the parse to generate all tokens and corresponding spans.
-    fn create_tokens(
-        context: &mut Self::Context,
-        source: &'a str,
-        diags: &mut Vec<Self::Diagnostic>,
-    ) -> (Vec<Token>, Vec<Span>);
-    fn lex(
-        &mut self,
-        _expect: &std::collections::HashSet<Token>,
-        _diags: &mut Vec<Self::Diagnostic>,
-    ) -> Option<(Token, Span)> {
+    fn create_tokens(context: &mut Self::Context, source: &'a str, diags: &mut Vec<Self::Diagnostic>) -> (Vec<Token>, Vec<Span>);
+    fn lex(&mut self, _expect: enumset::EnumSet<Token>, _diags: &mut Vec<Self::Diagnostic>) -> Option<(Token, Span)> {
         None
     }
     /// Called when diagnostic is created.
@@ -2041,15 +1466,9 @@ pub trait ParserCallbacks<'a> {
     /// Called when `name` node is created.
     fn create_node_name(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `node_creation` node is created.
-    fn create_node_node_creation(
-        &mut self,
-        _node_ref: NodeRef,
-        _diags: &mut Vec<Self::Diagnostic>,
-    ) {
-    }
+    fn create_node_node_creation(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `node_elision` node is created.
-    fn create_node_node_elision(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {
-    }
+    fn create_node_node_elision(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `node_marker` node is created.
     fn create_node_node_marker(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `node_rename` node is created.
@@ -2057,12 +1476,7 @@ pub trait ParserCallbacks<'a> {
     /// Called when `optional` node is created.
     fn create_node_optional(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `ordered_choice` node is created.
-    fn create_node_ordered_choice(
-        &mut self,
-        _node_ref: NodeRef,
-        _diags: &mut Vec<Self::Diagnostic>,
-    ) {
-    }
+    fn create_node_ordered_choice(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `paren` node is created.
     fn create_node_paren(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `part_decl` node is created.
@@ -2093,6 +1507,7 @@ pub trait ParserCallbacks<'a> {
     fn create_node_token_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
     /// Called when `token_list` node is created.
     fn create_node_token_list(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+
 
     /// Called when semantic predicate `?1` in rule `decl` is visited.
     fn predicate_decl_1(&self) -> bool;

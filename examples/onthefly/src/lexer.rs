@@ -2,7 +2,7 @@
 //!
 //! This is normally produced by `logos`, but this example intentionally uses a
 //! hand written lexer so the on-the-fly path is easy to follow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, enumset::EnumSetType)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum Token {
     EOF,
