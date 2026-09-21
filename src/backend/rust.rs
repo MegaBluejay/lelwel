@@ -1562,14 +1562,44 @@ impl RustOutput {
 
         output.write_all(
             format!(
-                include_str!("../skeleton/generated.rs"),
-                rules,
-                skip,
-                start_rule,
-                start_rule_pascal_case,
-                rules_fmt,
-                rules_create,
-                rules_delete,
+                "#[derive(Copy, Clone, PartialEq, Eq)]\
+               \n#[allow(dead_code)]\
+               \npub enum Rule {{{rules}\
+               \n}}\
+               \n\
+               \nimpl std::fmt::Debug for Rule {{\
+               \n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{\
+               \n        match self {{{rules_fmt}\
+               \n        }}\
+               \n    }}\
+               \n}}\n\n"
+            )
+            .as_bytes(),
+        )?;
+        output.write_all(include_str!("../skeleton/generated.rs").as_bytes())?;
+        output.write_all(
+            format!(
+                "\n#[allow(clippy::while_let_loop, dead_code, unused_parens)]\
+               \nimpl<'a> Parser<'a> {{\
+               \n    fn is_skipped(token: Token) -> bool {{\
+               \n        matches!(token, Token::Error{skip})\
+               \n    }}\
+               \n    fn create_node(\
+               \n        &mut self,\
+               \n        rule: Rule,\
+               \n        node_ref: NodeRef,\
+               \n        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>\
+               \n    ) {{\
+               \n        match rule {{{rules_create}\
+               \n        }}\
+               \n    }}\
+               \n    fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {{\
+               \n        {rules_delete}\
+               \n    }}\
+               \n    /// Returns the CST for a parse of the start rule\
+               \n    pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {{\
+               \n        self.parse_rule(|parser, diags| parser.rule_{start_rule}(enumset::EnumSet::empty(), enumset::EnumSet::empty(), diags), diags, Rule::{start_rule_pascal_case})\
+               \n    }}\n"
             )
             .as_bytes(),
         )?;

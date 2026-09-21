@@ -35,6 +35,43 @@ pub enum Rule {
     TokenList,
 }
 
+impl std::fmt::Debug for Rule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rule::Action => write!(f, "action"),
+            Rule::Alternation => write!(f, "alternation"),
+            Rule::Assertion => write!(f, "assertion"),
+            Rule::Commit => write!(f, "commit"),
+            Rule::Concat => write!(f, "concat"),
+            Rule::Decl => write!(f, "decl"),
+            Rule::Error => write!(f, "error"),
+            Rule::File => write!(f, "file"),
+            Rule::Name => write!(f, "name"),
+            Rule::NodeCreation => write!(f, "node_creation"),
+            Rule::NodeElision => write!(f, "node_elision"),
+            Rule::NodeMarker => write!(f, "node_marker"),
+            Rule::NodeRename => write!(f, "node_rename"),
+            Rule::Optional => write!(f, "optional"),
+            Rule::OrderedChoice => write!(f, "ordered_choice"),
+            Rule::Paren => write!(f, "paren"),
+            Rule::PartDecl => write!(f, "part_decl"),
+            Rule::Plus => write!(f, "plus"),
+            Rule::Postfix => write!(f, "postfix"),
+            Rule::Predicate => write!(f, "predicate"),
+            Rule::Regex => write!(f, "regex"),
+            Rule::Return => write!(f, "return"),
+            Rule::RightDecl => write!(f, "right_decl"),
+            Rule::RuleDecl => write!(f, "rule_decl"),
+            Rule::SkipDecl => write!(f, "skip_decl"),
+            Rule::Star => write!(f, "star"),
+            Rule::StartDecl => write!(f, "start_decl"),
+            Rule::Symbol => write!(f, "symbol"),
+            Rule::TokenDecl => write!(f, "token_decl"),
+            Rule::TokenList => write!(f, "token_list"),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct NodeRef(pub usize);
 
@@ -405,43 +442,6 @@ impl std::fmt::Display for Cst<'_> {
     }
 }
 
-impl std::fmt::Debug for Rule {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Rule::Action => write!(f, "action"),
-            Rule::Alternation => write!(f, "alternation"),
-            Rule::Assertion => write!(f, "assertion"),
-            Rule::Commit => write!(f, "commit"),
-            Rule::Concat => write!(f, "concat"),
-            Rule::Decl => write!(f, "decl"),
-            Rule::Error => write!(f, "error"),
-            Rule::File => write!(f, "file"),
-            Rule::Name => write!(f, "name"),
-            Rule::NodeCreation => write!(f, "node_creation"),
-            Rule::NodeElision => write!(f, "node_elision"),
-            Rule::NodeMarker => write!(f, "node_marker"),
-            Rule::NodeRename => write!(f, "node_rename"),
-            Rule::Optional => write!(f, "optional"),
-            Rule::OrderedChoice => write!(f, "ordered_choice"),
-            Rule::Paren => write!(f, "paren"),
-            Rule::PartDecl => write!(f, "part_decl"),
-            Rule::Plus => write!(f, "plus"),
-            Rule::Postfix => write!(f, "postfix"),
-            Rule::Predicate => write!(f, "predicate"),
-            Rule::Regex => write!(f, "regex"),
-            Rule::Return => write!(f, "return"),
-            Rule::RightDecl => write!(f, "right_decl"),
-            Rule::RuleDecl => write!(f, "rule_decl"),
-            Rule::SkipDecl => write!(f, "skip_decl"),
-            Rule::Star => write!(f, "star"),
-            Rule::StartDecl => write!(f, "start_decl"),
-            Rule::Symbol => write!(f, "symbol"),
-            Rule::TokenDecl => write!(f, "token_decl"),
-            Rule::TokenList => write!(f, "token_list"),
-        }
-    }
-}
-
 macro_rules! expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
         if let Token::$token = $self.current(enumset::enum_set!(Token::$token), $diags) {
@@ -560,13 +560,7 @@ impl<'a> Parser<'a> {
 
         loop {
             match self.token(expect, diags) {
-                Some(
-                    token @ (Token::Error
-                    | Token::LineComment
-                    | Token::BlockComment
-                    | Token::DocComment
-                    | Token::Whitespace),
-                ) => {
+                Some(token) if Self::is_skipped(token) => {
                     self.pos += 1;
                     self.cst.data.advance(token, true);
                 }
@@ -589,16 +583,6 @@ impl<'a> Parser<'a> {
         let token = self.current.take().expect("advance before current");
         self.cst.data.advance(token, false);
         self.pos += 1;
-    }
-    fn is_skipped(token: Token) -> bool {
-        matches!(
-            token,
-            Token::Error
-                | Token::LineComment
-                | Token::BlockComment
-                | Token::DocComment
-                | Token::Whitespace
-        )
     }
     fn advance_with_error(
         &mut self,
@@ -692,46 +676,6 @@ impl<'a> Parser<'a> {
         self.tokens.truncate(state.lexed);
         self.cst.data.spans.truncate(state.lexed);
     }
-    fn create_node(
-        &mut self,
-        rule: Rule,
-        node_ref: NodeRef,
-        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
-    ) {
-        match rule {
-            Rule::Action => self.create_node_action(node_ref, diags),
-            Rule::Alternation => self.create_node_alternation(node_ref, diags),
-            Rule::Assertion => self.create_node_assertion(node_ref, diags),
-            Rule::Commit => self.create_node_commit(node_ref, diags),
-            Rule::Concat => self.create_node_concat(node_ref, diags),
-            Rule::Decl => self.create_node_decl(node_ref, diags),
-            Rule::Error => self.create_node_error(node_ref, diags),
-            Rule::File => self.create_node_file(node_ref, diags),
-            Rule::Name => self.create_node_name(node_ref, diags),
-            Rule::NodeCreation => self.create_node_node_creation(node_ref, diags),
-            Rule::NodeElision => self.create_node_node_elision(node_ref, diags),
-            Rule::NodeMarker => self.create_node_node_marker(node_ref, diags),
-            Rule::NodeRename => self.create_node_node_rename(node_ref, diags),
-            Rule::Optional => self.create_node_optional(node_ref, diags),
-            Rule::OrderedChoice => self.create_node_ordered_choice(node_ref, diags),
-            Rule::Paren => self.create_node_paren(node_ref, diags),
-            Rule::PartDecl => self.create_node_part_decl(node_ref, diags),
-            Rule::Plus => self.create_node_plus(node_ref, diags),
-            Rule::Postfix => self.create_node_postfix(node_ref, diags),
-            Rule::Predicate => self.create_node_predicate(node_ref, diags),
-            Rule::Regex => self.create_node_regex(node_ref, diags),
-            Rule::Return => self.create_node_return(node_ref, diags),
-            Rule::RightDecl => self.create_node_right_decl(node_ref, diags),
-            Rule::RuleDecl => self.create_node_rule_decl(node_ref, diags),
-            Rule::SkipDecl => self.create_node_skip_decl(node_ref, diags),
-            Rule::Star => self.create_node_star(node_ref, diags),
-            Rule::StartDecl => self.create_node_start_decl(node_ref, diags),
-            Rule::Symbol => self.create_node_symbol(node_ref, diags),
-            Rule::TokenDecl => self.create_node_token_decl(node_ref, diags),
-            Rule::TokenList => self.create_node_token_list(node_ref, diags),
-        }
-    }
-    fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {}
     pub fn new_with_context(
         source: &'a str,
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
@@ -804,6 +748,60 @@ impl<'a> Parser<'a> {
         self.create_node(root, NodeRef(closed.0), diags);
         self.cst
     }
+}
+
+#[allow(clippy::while_let_loop, dead_code, unused_parens)]
+impl<'a> Parser<'a> {
+    fn is_skipped(token: Token) -> bool {
+        matches!(
+            token,
+            Token::Error
+                | Token::LineComment
+                | Token::BlockComment
+                | Token::DocComment
+                | Token::Whitespace
+        )
+    }
+    fn create_node(
+        &mut self,
+        rule: Rule,
+        node_ref: NodeRef,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) {
+        match rule {
+            Rule::Action => self.create_node_action(node_ref, diags),
+            Rule::Alternation => self.create_node_alternation(node_ref, diags),
+            Rule::Assertion => self.create_node_assertion(node_ref, diags),
+            Rule::Commit => self.create_node_commit(node_ref, diags),
+            Rule::Concat => self.create_node_concat(node_ref, diags),
+            Rule::Decl => self.create_node_decl(node_ref, diags),
+            Rule::Error => self.create_node_error(node_ref, diags),
+            Rule::File => self.create_node_file(node_ref, diags),
+            Rule::Name => self.create_node_name(node_ref, diags),
+            Rule::NodeCreation => self.create_node_node_creation(node_ref, diags),
+            Rule::NodeElision => self.create_node_node_elision(node_ref, diags),
+            Rule::NodeMarker => self.create_node_node_marker(node_ref, diags),
+            Rule::NodeRename => self.create_node_node_rename(node_ref, diags),
+            Rule::Optional => self.create_node_optional(node_ref, diags),
+            Rule::OrderedChoice => self.create_node_ordered_choice(node_ref, diags),
+            Rule::Paren => self.create_node_paren(node_ref, diags),
+            Rule::PartDecl => self.create_node_part_decl(node_ref, diags),
+            Rule::Plus => self.create_node_plus(node_ref, diags),
+            Rule::Postfix => self.create_node_postfix(node_ref, diags),
+            Rule::Predicate => self.create_node_predicate(node_ref, diags),
+            Rule::Regex => self.create_node_regex(node_ref, diags),
+            Rule::Return => self.create_node_return(node_ref, diags),
+            Rule::RightDecl => self.create_node_right_decl(node_ref, diags),
+            Rule::RuleDecl => self.create_node_rule_decl(node_ref, diags),
+            Rule::SkipDecl => self.create_node_skip_decl(node_ref, diags),
+            Rule::Star => self.create_node_star(node_ref, diags),
+            Rule::StartDecl => self.create_node_start_decl(node_ref, diags),
+            Rule::Symbol => self.create_node_symbol(node_ref, diags),
+            Rule::TokenDecl => self.create_node_token_decl(node_ref, diags),
+            Rule::TokenList => self.create_node_token_list(node_ref, diags),
+        }
+    }
+    fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {}
     /// Returns the CST for a parse of the start rule
     pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {
         self.parse_rule(
