@@ -16,6 +16,8 @@ rust-2018-idioms = { level = "deny" }
 [dependencies]
 enumset = "1"
 logos = "0.16"
+prettyplease = "0.2"
+syn = { version = "2", features = ["full"] }
 codespan-reporting = "0.13"
 rustc-hash = "2.1"
 codespan-lsp = { version = "0.13", optional = true }

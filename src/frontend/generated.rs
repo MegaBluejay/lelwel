@@ -34,7 +34,6 @@ pub enum Rule {
     TokenDecl,
     TokenList,
 }
-
 impl std::fmt::Debug for Rule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -71,29 +70,23 @@ impl std::fmt::Debug for Rule {
         }
     }
 }
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct NodeRef(pub usize);
-
 impl NodeRef {
     #[allow(dead_code)]
     pub const ROOT: NodeRef = NodeRef(0);
 }
-
 #[cfg(target_pointer_width = "64")]
 #[derive(Copy, Clone)]
 pub struct CstIndex([u8; 6]);
-
 #[cfg(any(target_pointer_width = "16", target_pointer_width = "32"))]
 #[derive(Copy, Clone)]
 pub struct CstIndex(usize);
-
 impl std::fmt::Debug for CstIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         usize::from(*self).fmt(f)
     }
 }
-
 impl From<CstIndex> for usize {
     #[cfg(target_pointer_width = "64")]
     #[inline]
@@ -121,7 +114,6 @@ impl From<usize> for CstIndex {
         Self(value)
     }
 }
-
 /// Type of a node in the CST.
 ///
 /// The nodes for rules contain the offset to their last child node.
@@ -135,7 +127,6 @@ pub enum Node {
     Rule(Rule, CstIndex),
     Token(Token, CstIndex),
 }
-
 #[derive(Clone, Copy)]
 struct MarkOpened(usize);
 #[derive(Clone, Copy)]
@@ -148,7 +139,6 @@ struct MarkTruncation {
     open: usize,
     starts_len: usize,
 }
-
 /// An iterator for child nodes of a CST node.
 #[derive(Default)]
 pub struct CstChildren<'a> {
@@ -157,7 +147,6 @@ pub struct CstChildren<'a> {
 }
 impl Iterator for CstChildren<'_> {
     type Item = NodeRef;
-
     fn next(&mut self) -> Option<Self::Item> {
         let offset = self.offset;
         self.offset += 1;
@@ -175,9 +164,7 @@ impl Iterator for CstChildren<'_> {
         }
     }
 }
-
 pub type Span = core::ops::Range<usize>;
-
 #[derive(Debug)]
 pub struct CstData {
     spans: Vec<Span>,
@@ -231,7 +218,7 @@ impl CstData {
             } else {
                 len - start
             }
-            .into(),
+                .into(),
         );
         MarkClosed(start)
     }
@@ -254,10 +241,15 @@ impl CstData {
             self.non_skip_len = self.nodes.len();
         }
     }
-    fn open_before(&mut self, mark: MarkClosed, is_skipped: fn(Token) -> bool) -> MarkOpened {
+    fn open_before(
+        &mut self,
+        mark: MarkClosed,
+        is_skipped: fn(Token) -> bool,
+    ) -> MarkOpened {
         self.flush_open();
         let from = self.starts.last().map_or(mark.0, |&s| s + 1).max(mark.0);
-        let i = self.nodes[from..]
+        let i = self
+            .nodes[from..]
             .iter()
             .position(|node| match node {
                 Node::Rule(_, _) => true,
@@ -337,7 +329,6 @@ impl CstData {
         matches!(self.nodes[node_ref.0], Node::Rule(rule, _) if rule == matched_rule)
     }
 }
-
 /// A concrete syntax tree (CST) type.
 ///
 /// Nodes are laid out linearly in memory.
@@ -392,7 +383,11 @@ impl<'a> Cst<'a> {
         self.data.span(node_ref)
     }
     /// Returns the slice and span of the node referenced by `node_ref` if it matches `matched_token`.
-    pub fn match_token(&self, node_ref: NodeRef, matched_token: Token) -> Option<(&'a str, Span)> {
+    pub fn match_token(
+        &self,
+        node_ref: NodeRef,
+        matched_token: Token,
+    ) -> Option<(&'a str, Span)> {
         self.data
             .match_token(node_ref, matched_token)
             .map(|span| (&self.source[span.clone()], span))
@@ -406,7 +401,6 @@ impl<'a> Cst<'a> {
         &self.source[self.data.spans[usize::from(span_idx)].clone()]
     }
 }
-
 impl std::fmt::Display for Cst<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         const DEPTH: &str = "    ";
@@ -428,12 +422,8 @@ impl std::fmt::Display for Cst<'_> {
                 Node::Token(token, idx) => {
                     let span = &cst.data.spans[usize::from(idx)];
                     writeln!(
-                        f,
-                        "{}{:?} {:?} [{:?}]",
-                        DEPTH.repeat(indent),
-                        token,
-                        &cst.source[span.clone()],
-                        span,
+                        f, "{}{:?} {:?} [{:?}]", DEPTH.repeat(indent), token, & cst
+                        .source[span.clone()], span,
                     )
                 }
             }
@@ -441,30 +431,20 @@ impl std::fmt::Display for Cst<'_> {
         rec(self, f, NodeRef::ROOT, 0)
     }
 }
-
 macro_rules! expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
-        if let Token::$token = $self.current(enumset::enum_set!(Token::$token), $diags) {
-            $self.advance(false, $diags);
-        } else {
-            $self.error($diags, $msg);
-        }
+        if let Token::$token = $self .current(enumset::enum_set!(Token::$token), $diags)
+        { $self .advance(false, $diags); } else { $self .error($diags, $msg); }
     };
 }
 #[allow(unused_macros)]
 macro_rules! try_expect {
     ($token:ident, $msg:literal, $self:expr, $diags:expr) => {
-        if let Token::$token = $self.current(enumset::enum_set!(Token::$token), $diags) {
-            $self.advance(false, $diags);
-        } else {
-            if $self.in_ordered_choice {
-                return None;
-            }
-            $self.error($diags, $msg);
-        }
+        if let Token::$token = $self .current(enumset::enum_set!(Token::$token), $diags)
+        { $self .advance(false, $diags); } else { if $self .in_ordered_choice { return
+        None; } $self .error($diags, $msg); }
     };
 }
-
 struct ParserState<S> {
     pos: usize,
     current: Option<Token>,
@@ -488,7 +468,6 @@ pub struct Parser<'a> {
     error_since_advance: bool,
     state: <Self as ParserCallbacks<'a>>::State,
 }
-
 #[allow(dead_code)]
 fn expected_message(expected: enumset::EnumSet<Token>) -> String {
     let symbols: Vec<&str> = TOKEN_SYMBOLS
@@ -516,7 +495,6 @@ fn expected_message(expected: enumset::EnumSet<Token>) -> String {
     }
     message
 }
-
 #[allow(clippy::while_let_loop, dead_code, unused_parens)]
 impl<'a> Parser<'a> {
     fn active_error(&self) -> bool {
@@ -541,12 +519,9 @@ impl<'a> Parser<'a> {
         if self.pos < self.tokens.len() {
             return Some(self.tokens[self.pos]);
         }
-
         let (token, span) = self.lex(expect, diags)?;
-
         self.tokens.push(token);
         self.cst.data.spans.push(span);
-
         Some(token)
     }
     fn current(
@@ -557,7 +532,6 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.current {
             return token;
         }
-
         loop {
             match self.token(expect, diags) {
                 Some(token) if Self::is_skipped(token) => {
@@ -575,7 +549,11 @@ impl<'a> Parser<'a> {
             }
         }
     }
-    fn advance(&mut self, error: bool, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+    fn advance(
+        &mut self,
+        error: bool,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) {
         if !error {
             self.close_error_node(diags);
             self.error_since_advance = false;
@@ -595,14 +573,20 @@ impl<'a> Parser<'a> {
         }
         self.advance(true, diags);
     }
-    fn close_error_node(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) {
+    fn close_error_node(
+        &mut self,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) {
         if let Some(error_node) = self.error_node {
             let closed = self.cst.data.close(error_node, Rule::Error);
             self.create_node_error(NodeRef(closed.0), diags);
             self.error_node = None;
         }
     }
-    fn open(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkOpened {
+    fn open(
+        &mut self,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) -> MarkOpened {
         self.close_error_node(diags);
         self.cst.data.open()
     }
@@ -632,7 +616,10 @@ impl<'a> Parser<'a> {
         self.close_error_node(diags);
         self.cst.data.close_root(mark, rule)
     }
-    fn mark(&mut self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> MarkClosed {
+    fn mark(
+        &mut self,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) -> MarkClosed {
         self.close_error_node(diags);
         self.cst.data.mark()
     }
@@ -726,40 +713,30 @@ impl<'a> Parser<'a> {
         root: Rule,
     ) -> Cst<'a> {
         let m = self.open(diags);
-
         rule(&mut self, diags);
-
         self.close_error_node(diags);
         if self.current(enumset::EnumSet::empty(), diags) != self.end_of_input {
             self.error(diags, "invalid syntax, expected: <end of file>");
             let error_tree = self.open(diags);
-
             while let token = self.current(enumset::EnumSet::empty(), diags)
                 && token != self.end_of_input
             {
                 self.advance(false, diags);
             }
-
             let closed = self.cst.data.close(error_tree, Rule::Error);
             self.create_node_error(NodeRef(closed.0), diags);
         }
-
         let closed = self.cst.data.close_root(m, root);
         self.create_node(root, NodeRef(closed.0), diags);
         self.cst
     }
 }
-
 #[allow(clippy::while_let_loop, dead_code, unused_parens)]
 impl<'a> Parser<'a> {
     fn is_skipped(token: Token) -> bool {
         matches!(
-            token,
-            Token::Error
-                | Token::LineComment
-                | Token::BlockComment
-                | Token::DocComment
-                | Token::Whitespace
+            token, Token::Error | Token::LineComment | Token::BlockComment |
+            Token::DocComment | Token::Whitespace
         )
     }
     fn create_node(
@@ -803,10 +780,18 @@ impl<'a> Parser<'a> {
     }
     fn delete_node(&mut self, _rule: Rule, _node_ref: NodeRef) {}
     /// Returns the CST for a parse of the start rule
-    pub fn parse(self, diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>) -> Cst<'a> {
+    pub fn parse(
+        self,
+        diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
+    ) -> Cst<'a> {
         self.parse_rule(
             |parser, diags| {
-                parser.rule_file(enumset::EnumSet::empty(), enumset::EnumSet::empty(), diags)
+                parser
+                    .rule_file(
+                        enumset::EnumSet::empty(),
+                        enumset::EnumSet::empty(),
+                        diags,
+                    )
             },
             diags,
             Rule::File,
@@ -820,13 +805,8 @@ impl<'a> Parser<'a> {
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
     ) {
         let expected = (enumset::enum_set!(
-            Token::EOF
-                | Token::Id
-                | Token::Part
-                | Token::Right
-                | Token::Skip
-                | Token::Start
-                | Token::Token
+            Token::EOF | Token::Id | Token::Part | Token::Right | Token::Skip |
+            Token::Start | Token::Token
         ) | follow);
         loop {
             match self.current(expected, diags) {
@@ -838,22 +818,12 @@ impl<'a> Parser<'a> {
                 | Token::Token => {
                     self.rule_decl(
                         (enumset::enum_set!(
-                            Token::EOF
-                                | Token::Id
-                                | Token::Part
-                                | Token::Right
-                                | Token::Skip
-                                | Token::Start
-                                | Token::Token
+                            Token::EOF | Token::Id | Token::Part | Token::Right |
+                            Token::Skip | Token::Start | Token::Token
                         ) | follow),
                         (enumset::enum_set!(
-                            Token::EOF
-                                | Token::Id
-                                | Token::Part
-                                | Token::Right
-                                | Token::Skip
-                                | Token::Start
-                                | Token::Token
+                            Token::EOF | Token::Id | Token::Part | Token::Right |
+                            Token::Skip | Token::Start | Token::Token
                         ) | recover),
                         diags,
                     );
@@ -877,7 +847,8 @@ impl<'a> Parser<'a> {
         diags: &mut Vec<<Self as ParserCallbacks<'a>>::Diagnostic>,
     ) {
         let expected = enumset::enum_set!(
-            Token::Id | Token::Part | Token::Right | Token::Skip | Token::Start | Token::Token
+            Token::Id | Token::Part | Token::Right | Token::Skip | Token::Start |
+            Token::Token
         );
         match self.current(expected, diags) {
             Token::Token => {
@@ -959,12 +930,7 @@ impl<'a> Parser<'a> {
                 expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
             }
             Token::Str => {
-                expect!(
-                    Str,
-                    "invalid syntax, expected: <string literal>",
-                    self,
-                    diags
-                );
+                expect!(Str, "invalid syntax, expected: <string literal>", self, diags);
             }
             _ => {
                 self.error(diags, expected_message(expected));
@@ -977,13 +943,13 @@ impl<'a> Parser<'a> {
                     let expected = enumset::enum_set!(Token::Id | Token::Str);
                     match self.current(expected, diags) {
                         Token::Id => {
-                            expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
+                            expect!(
+                                Id, "invalid syntax, expected: <identifier>", self, diags
+                            );
                         }
                         Token::Str => {
                             expect!(
-                                Str,
-                                "invalid syntax, expected: <string literal>",
-                                self,
+                                Str, "invalid syntax, expected: <string literal>", self,
                                 diags
                             );
                         }
@@ -992,7 +958,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if enumset::enum_set!(Token::Semi).contains(c) => break,
                 c if (enumset::EnumSet::empty() | recover).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
@@ -1021,12 +987,7 @@ impl<'a> Parser<'a> {
                 expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
             }
             Token::Str => {
-                expect!(
-                    Str,
-                    "invalid syntax, expected: <string literal>",
-                    self,
-                    diags
-                );
+                expect!(Str, "invalid syntax, expected: <string literal>", self, diags);
             }
             _ => {
                 self.error(diags, expected_message(expected));
@@ -1039,13 +1000,13 @@ impl<'a> Parser<'a> {
                     let expected = enumset::enum_set!(Token::Id | Token::Str);
                     match self.current(expected, diags) {
                         Token::Id => {
-                            expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
+                            expect!(
+                                Id, "invalid syntax, expected: <identifier>", self, diags
+                            );
                         }
                         Token::Str => {
                             expect!(
-                                Str,
-                                "invalid syntax, expected: <string literal>",
-                                self,
+                                Str, "invalid syntax, expected: <string literal>", self,
                                 diags
                             );
                         }
@@ -1054,7 +1015,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if enumset::enum_set!(Token::Semi).contains(c) => break,
                 c if (enumset::EnumSet::empty() | recover).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
@@ -1084,7 +1045,7 @@ impl<'a> Parser<'a> {
                 Token::Id => {
                     expect!(Id, "invalid syntax, expected: <identifier>", self, diags);
                 }
-                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if enumset::enum_set!(Token::Semi).contains(c) => break,
                 c if (enumset::EnumSet::empty() | recover).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
@@ -1122,7 +1083,7 @@ impl<'a> Parser<'a> {
                         diags,
                     );
                 }
-                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if enumset::enum_set!(Token::Semi).contains(c) => break,
                 c if (enumset::EnumSet::empty() | recover).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
@@ -1151,10 +1112,7 @@ impl<'a> Parser<'a> {
                 Token::Equal => {
                     expect!(Equal, "invalid syntax, expected: \'=\'", self, diags);
                     expect!(
-                        Str,
-                        "invalid syntax, expected: <string literal>",
-                        self,
-                        diags
+                        Str, "invalid syntax, expected: <string literal>", self, diags
                     );
                     break;
                 }
@@ -1187,7 +1145,7 @@ impl<'a> Parser<'a> {
                     expect!(Hat, "invalid syntax, expected: \'^\'", self, diags);
                     break;
                 }
-                c if (enumset::enum_set!(Token::Colon)).contains(c) => break,
+                c if enumset::enum_set!(Token::Colon).contains(c) => break,
                 c if (enumset::EnumSet::empty() | recover).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
@@ -1199,20 +1157,10 @@ impl<'a> Parser<'a> {
         }
         expect!(Colon, "invalid syntax, expected: \':\'", self, diags);
         let expected = enumset::enum_set!(
-            Token::Action
-                | Token::And
-                | Token::Assertion
-                | Token::Hat
-                | Token::Id
-                | Token::LBrak
-                | Token::LPar
-                | Token::NodeCreation
-                | Token::NodeMarker
-                | Token::NodeRename
-                | Token::Predicate
-                | Token::Semi
-                | Token::Str
-                | Token::Tilde
+            Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id |
+            Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker |
+            Token::NodeRename | Token::Predicate | Token::Semi | Token::Str |
+            Token::Tilde
         );
         loop {
             match self.current(expected, diags) {
@@ -1236,7 +1184,7 @@ impl<'a> Parser<'a> {
                     );
                     break;
                 }
-                c if (enumset::enum_set!(Token::Semi)).contains(c) => break,
+                c if enumset::enum_set!(Token::Semi).contains(c) => break,
                 c if (enumset::EnumSet::empty() | recover).contains(c) => {
                     self.error(diags, expected_message(expected));
                     break;
@@ -1297,7 +1245,9 @@ impl<'a> Parser<'a> {
                                     diags,
                                 );
                             }
-                            c if (enumset::EnumSet::empty() | follow).contains(c) => break,
+                            c if (enumset::EnumSet::empty() | follow).contains(c) => {
+                                break;
+                            }
                             c if (enumset::EnumSet::empty() | recover).contains(c) => {
                                 self.error(diags, expected_message(expected));
                                 break;
@@ -1350,14 +1300,18 @@ impl<'a> Parser<'a> {
                     loop {
                         match self.current(expected, diags) {
                             Token::Slash => {
-                                expect!(Slash, "invalid syntax, expected: \'/\'", self, diags);
+                                expect!(
+                                    Slash, "invalid syntax, expected: \'/\'", self, diags
+                                );
                                 self.rule_concat(
                                     (enumset::enum_set!(Token::Slash) | follow),
                                     (enumset::enum_set!(Token::Slash) | recover),
                                     diags,
                                 );
                             }
-                            c if (enumset::EnumSet::empty() | follow).contains(c) => break,
+                            c if (enumset::EnumSet::empty() | follow).contains(c) => {
+                                break;
+                            }
                             c if (enumset::EnumSet::empty() | recover).contains(c) => {
                                 self.error(diags, expected_message(expected));
                                 break;
@@ -1393,51 +1347,21 @@ impl<'a> Parser<'a> {
         let start = self.mark(diags);
         self.rule_postfix(
             (enumset::enum_set!(
-                Token::Action
-                    | Token::And
-                    | Token::Assertion
-                    | Token::Hat
-                    | Token::Id
-                    | Token::LBrak
-                    | Token::LPar
-                    | Token::NodeCreation
-                    | Token::NodeMarker
-                    | Token::NodeRename
-                    | Token::Predicate
-                    | Token::Str
-                    | Token::Tilde
+                Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id |
+                Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker |
+                Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde
             ) | follow),
             (enumset::enum_set!(
-                Token::Action
-                    | Token::And
-                    | Token::Assertion
-                    | Token::Hat
-                    | Token::Id
-                    | Token::LBrak
-                    | Token::LPar
-                    | Token::NodeCreation
-                    | Token::NodeMarker
-                    | Token::NodeRename
-                    | Token::Predicate
-                    | Token::Str
-                    | Token::Tilde
+                Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id |
+                Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker |
+                Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde
             ) | recover),
             diags,
         );
         let expected = (enumset::enum_set!(
-            Token::Action
-                | Token::And
-                | Token::Assertion
-                | Token::Hat
-                | Token::Id
-                | Token::LBrak
-                | Token::LPar
-                | Token::NodeCreation
-                | Token::NodeMarker
-                | Token::NodeRename
-                | Token::Predicate
-                | Token::Str
-                | Token::Tilde
+            Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id |
+            Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker |
+            Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde
         ) | follow);
         loop {
             match self.current(expected, diags) {
@@ -1456,51 +1380,24 @@ impl<'a> Parser<'a> {
                 | Token::Tilde => {
                     self.rule_postfix(
                         (enumset::enum_set!(
-                            Token::Action
-                                | Token::And
-                                | Token::Assertion
-                                | Token::Hat
-                                | Token::Id
-                                | Token::LBrak
-                                | Token::LPar
-                                | Token::NodeCreation
-                                | Token::NodeMarker
-                                | Token::NodeRename
-                                | Token::Predicate
-                                | Token::Str
-                                | Token::Tilde
+                            Token::Action | Token::And | Token::Assertion | Token::Hat |
+                            Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation
+                            | Token::NodeMarker | Token::NodeRename | Token::Predicate |
+                            Token::Str | Token::Tilde
                         ) | follow),
                         (enumset::enum_set!(
-                            Token::Action
-                                | Token::And
-                                | Token::Assertion
-                                | Token::Hat
-                                | Token::Id
-                                | Token::LBrak
-                                | Token::LPar
-                                | Token::NodeCreation
-                                | Token::NodeMarker
-                                | Token::NodeRename
-                                | Token::Predicate
-                                | Token::Str
-                                | Token::Tilde
+                            Token::Action | Token::And | Token::Assertion | Token::Hat |
+                            Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation
+                            | Token::NodeMarker | Token::NodeRename | Token::Predicate |
+                            Token::Str | Token::Tilde
                         ) | recover),
                         diags,
                     );
                     let expected = (enumset::enum_set!(
-                        Token::Action
-                            | Token::And
-                            | Token::Assertion
-                            | Token::Hat
-                            | Token::Id
-                            | Token::LBrak
-                            | Token::LPar
-                            | Token::NodeCreation
-                            | Token::NodeMarker
-                            | Token::NodeRename
-                            | Token::Predicate
-                            | Token::Str
-                            | Token::Tilde
+                        Token::Action | Token::And | Token::Assertion | Token::Hat |
+                        Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation |
+                        Token::NodeMarker | Token::NodeRename | Token::Predicate |
+                        Token::Str | Token::Tilde
                     ) | follow);
                     loop {
                         match self.current(expected, diags) {
@@ -1519,39 +1416,23 @@ impl<'a> Parser<'a> {
                             | Token::Tilde => {
                                 self.rule_postfix(
                                     (enumset::enum_set!(
-                                        Token::Action
-                                            | Token::And
-                                            | Token::Assertion
-                                            | Token::Hat
-                                            | Token::Id
-                                            | Token::LBrak
-                                            | Token::LPar
-                                            | Token::NodeCreation
-                                            | Token::NodeMarker
-                                            | Token::NodeRename
-                                            | Token::Predicate
-                                            | Token::Str
-                                            | Token::Tilde
+                                        Token::Action | Token::And | Token::Assertion | Token::Hat |
+                                        Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation
+                                        | Token::NodeMarker | Token::NodeRename | Token::Predicate |
+                                        Token::Str | Token::Tilde
                                     ) | follow),
                                     (enumset::enum_set!(
-                                        Token::Action
-                                            | Token::And
-                                            | Token::Assertion
-                                            | Token::Hat
-                                            | Token::Id
-                                            | Token::LBrak
-                                            | Token::LPar
-                                            | Token::NodeCreation
-                                            | Token::NodeMarker
-                                            | Token::NodeRename
-                                            | Token::Predicate
-                                            | Token::Str
-                                            | Token::Tilde
+                                        Token::Action | Token::And | Token::Assertion | Token::Hat |
+                                        Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation
+                                        | Token::NodeMarker | Token::NodeRename | Token::Predicate |
+                                        Token::Str | Token::Tilde
                                     ) | recover),
                                     diags,
                                 );
                             }
-                            c if (enumset::EnumSet::empty() | follow).contains(c) => break,
+                            c if (enumset::EnumSet::empty() | follow).contains(c) => {
+                                break;
+                            }
                             c if (enumset::EnumSet::empty() | recover).contains(c) => {
                                 self.error(diags, expected_message(expected));
                                 break;
@@ -1595,39 +1476,19 @@ impl<'a> Parser<'a> {
         ) {
             let mut node_kind = Rule::Postfix;
             let expected = enumset::enum_set!(
-                Token::Action
-                    | Token::And
-                    | Token::Assertion
-                    | Token::Hat
-                    | Token::Id
-                    | Token::LBrak
-                    | Token::LPar
-                    | Token::NodeCreation
-                    | Token::NodeMarker
-                    | Token::NodeRename
-                    | Token::Predicate
-                    | Token::Str
-                    | Token::Tilde
+                Token::Action | Token::And | Token::Assertion | Token::Hat | Token::Id |
+                Token::LBrak | Token::LPar | Token::NodeCreation | Token::NodeMarker |
+                Token::NodeRename | Token::Predicate | Token::Str | Token::Tilde
             );
             match parser.current(expected, diags) {
                 Token::LPar => {
                     let m = parser.open(diags);
                     expect!(LPar, "invalid syntax, expected: \'(\'", parser, diags);
                     let expected = enumset::enum_set!(
-                        Token::Action
-                            | Token::And
-                            | Token::Assertion
-                            | Token::Hat
-                            | Token::Id
-                            | Token::LBrak
-                            | Token::LPar
-                            | Token::NodeCreation
-                            | Token::NodeMarker
-                            | Token::NodeRename
-                            | Token::Predicate
-                            | Token::RPar
-                            | Token::Str
-                            | Token::Tilde
+                        Token::Action | Token::And | Token::Assertion | Token::Hat |
+                        Token::Id | Token::LBrak | Token::LPar | Token::NodeCreation |
+                        Token::NodeMarker | Token::NodeRename | Token::Predicate |
+                        Token::RPar | Token::Str | Token::Tilde
                     );
                     loop {
                         match parser.current(expected, diags) {
@@ -1644,22 +1505,24 @@ impl<'a> Parser<'a> {
                             | Token::Predicate
                             | Token::Str
                             | Token::Tilde => {
-                                parser.rule_regex(
-                                    enumset::enum_set!(Token::RPar),
-                                    (enumset::enum_set!(Token::RPar) | recover),
-                                    diags,
-                                );
+                                parser
+                                    .rule_regex(
+                                        enumset::enum_set!(Token::RPar),
+                                        (enumset::enum_set!(Token::RPar) | recover),
+                                        diags,
+                                    );
                                 break;
                             }
-                            c if (enumset::enum_set!(Token::RPar)).contains(c) => break,
-                            c if (enumset::enum_set!(Token::Plus | Token::Star) | recover)
-                                .contains(c) =>
-                            {
+                            c if enumset::enum_set!(Token::RPar).contains(c) => break,
+                            c if (enumset::enum_set!(Token::Plus | Token::Star)
+                                | recover)
+                                .contains(c) => {
                                 parser.error(diags, expected_message(expected));
                                 break;
                             }
                             _ => {
-                                parser.advance_with_error(diags, expected_message(expected));
+                                parser
+                                    .advance_with_error(diags, expected_message(expected));
                             }
                         }
                     }
@@ -1671,11 +1534,12 @@ impl<'a> Parser<'a> {
                 Token::LBrak => {
                     let m = parser.open(diags);
                     expect!(LBrak, "invalid syntax, expected: \'[\'", parser, diags);
-                    parser.rule_regex(
-                        enumset::enum_set!(Token::RBrak),
-                        (enumset::enum_set!(Token::RBrak) | recover),
-                        diags,
-                    );
+                    parser
+                        .rule_regex(
+                            enumset::enum_set!(Token::RBrak),
+                            (enumset::enum_set!(Token::RBrak) | recover),
+                            diags,
+                        );
                     expect!(RBrak, "invalid syntax, expected: \']\'", parser, diags);
                     node_kind = Rule::Optional;
                     let closed = parser.close(m, node_kind, diags);
@@ -1691,10 +1555,7 @@ impl<'a> Parser<'a> {
                 Token::Str => {
                     let m = parser.open(diags);
                     expect!(
-                        Str,
-                        "invalid syntax, expected: <string literal>",
-                        parser,
-                        diags
+                        Str, "invalid syntax, expected: <string literal>", parser, diags
                     );
                     node_kind = Rule::Symbol;
                     let closed = parser.close(m, node_kind, diags);
@@ -1703,10 +1564,8 @@ impl<'a> Parser<'a> {
                 Token::Predicate => {
                     let m = parser.open(diags);
                     expect!(
-                        Predicate,
-                        "invalid syntax, expected: <semantic predicate>",
-                        parser,
-                        diags
+                        Predicate, "invalid syntax, expected: <semantic predicate>",
+                        parser, diags
                     );
                     node_kind = Rule::Predicate;
                     let closed = parser.close(m, node_kind, diags);
@@ -1715,9 +1574,7 @@ impl<'a> Parser<'a> {
                 Token::Action => {
                     let m = parser.open(diags);
                     expect!(
-                        Action,
-                        "invalid syntax, expected: <semantic action>",
-                        parser,
+                        Action, "invalid syntax, expected: <semantic action>", parser,
                         diags
                     );
                     node_kind = Rule::Action;
@@ -1727,10 +1584,8 @@ impl<'a> Parser<'a> {
                 Token::Assertion => {
                     let m = parser.open(diags);
                     expect!(
-                        Assertion,
-                        "invalid syntax, expected: <semantic assertion>",
-                        parser,
-                        diags
+                        Assertion, "invalid syntax, expected: <semantic assertion>",
+                        parser, diags
                     );
                     node_kind = Rule::Assertion;
                     let closed = parser.close(m, node_kind, diags);
@@ -1739,9 +1594,7 @@ impl<'a> Parser<'a> {
                 Token::NodeRename => {
                     let m = parser.open(diags);
                     expect!(
-                        NodeRename,
-                        "invalid syntax, expected: <node rename>",
-                        parser,
+                        NodeRename, "invalid syntax, expected: <node rename>", parser,
                         diags
                     );
                     node_kind = Rule::NodeRename;
@@ -1751,9 +1604,7 @@ impl<'a> Parser<'a> {
                 Token::NodeMarker => {
                     let m = parser.open(diags);
                     expect!(
-                        NodeMarker,
-                        "invalid syntax, expected: <node marker>",
-                        parser,
+                        NodeMarker, "invalid syntax, expected: <node marker>", parser,
                         diags
                     );
                     node_kind = Rule::NodeMarker;
@@ -1763,10 +1614,8 @@ impl<'a> Parser<'a> {
                 Token::NodeCreation => {
                     let m = parser.open(diags);
                     expect!(
-                        NodeCreation,
-                        "invalid syntax, expected: <node creation>",
-                        parser,
-                        diags
+                        NodeCreation, "invalid syntax, expected: <node creation>",
+                        parser, diags
                     );
                     node_kind = Rule::NodeCreation;
                     let closed = parser.close(m, node_kind, diags);
@@ -1799,10 +1648,12 @@ impl<'a> Parser<'a> {
             }
             loop {
                 node_kind = Rule::Postfix;
-                match parser.current(
-                    (enumset::enum_set!(Token::Plus | Token::Star) | follow),
-                    diags,
-                ) {
+                match parser
+                    .current(
+                        (enumset::enum_set!(Token::Plus | Token::Star) | follow),
+                        diags,
+                    )
+                {
                     Token::Star => {
                         let m = parser.open_before(lhs, diags);
                         expect!(Star, "invalid syntax, expected: \'*\'", parser, diags);
@@ -1831,7 +1682,6 @@ impl<'a> Parser<'a> {
         rec(self, follow, recover, diags, lhs);
     }
 }
-
 #[allow(dead_code)]
 const TOKEN_SYMBOLS: &[(Token, &str)] = &[
     (Token::Action, "<semantic action>"),
@@ -1867,13 +1717,11 @@ const TOKEN_SYMBOLS: &[(Token, &str)] = &[
     (Token::Token, "token"),
     (Token::Whitespace, "Whitespace"),
 ];
-
 #[allow(clippy::ptr_arg)]
 pub trait ParserCallbacks<'a> {
     type Diagnostic;
     type Context;
     type State: Clone;
-
     /// Called at the start of the parse to generate all tokens and corresponding spans.
     fn create_tokens(
         context: &mut Self::Context,
@@ -1889,79 +1737,186 @@ pub trait ParserCallbacks<'a> {
     }
     /// Called when diagnostic is created.
     fn create_diagnostic(&self, span: Span, message: String) -> Self::Diagnostic;
-
     /// Called when `action` node is created.
-    fn create_node_action(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_action(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `alternation` node is created.
-    fn create_node_alternation(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_alternation(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `assertion` node is created.
-    fn create_node_assertion(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_assertion(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `commit` node is created.
-    fn create_node_commit(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_commit(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `concat` node is created.
-    fn create_node_concat(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_concat(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `decl` node is created.
-    fn create_node_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_decl(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `error` node is created.
-    fn create_node_error(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_error(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `file` node is created.
-    fn create_node_file(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_file(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `name` node is created.
-    fn create_node_name(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_name(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `node_creation` node is created.
     fn create_node_node_creation(
         &mut self,
         _node_ref: NodeRef,
         _diags: &mut Vec<Self::Diagnostic>,
-    ) {
-    }
+    ) {}
     /// Called when `node_elision` node is created.
-    fn create_node_node_elision(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {
-    }
+    fn create_node_node_elision(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `node_marker` node is created.
-    fn create_node_node_marker(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_node_marker(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `node_rename` node is created.
-    fn create_node_node_rename(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_node_rename(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `optional` node is created.
-    fn create_node_optional(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_optional(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `ordered_choice` node is created.
     fn create_node_ordered_choice(
         &mut self,
         _node_ref: NodeRef,
         _diags: &mut Vec<Self::Diagnostic>,
-    ) {
-    }
+    ) {}
     /// Called when `paren` node is created.
-    fn create_node_paren(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_paren(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `part_decl` node is created.
-    fn create_node_part_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_part_decl(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `plus` node is created.
-    fn create_node_plus(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_plus(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `postfix` node is created.
-    fn create_node_postfix(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_postfix(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `predicate` node is created.
-    fn create_node_predicate(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_predicate(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `regex` node is created.
-    fn create_node_regex(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_regex(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `return` node is created.
-    fn create_node_return(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_return(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `right_decl` node is created.
-    fn create_node_right_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_right_decl(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `rule_decl` node is created.
-    fn create_node_rule_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_rule_decl(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `skip_decl` node is created.
-    fn create_node_skip_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_skip_decl(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `star` node is created.
-    fn create_node_star(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_star(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `start_decl` node is created.
-    fn create_node_start_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_start_decl(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `symbol` node is created.
-    fn create_node_symbol(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_symbol(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `token_decl` node is created.
-    fn create_node_token_decl(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
+    fn create_node_token_decl(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when `token_list` node is created.
-    fn create_node_token_list(&mut self, _node_ref: NodeRef, _diags: &mut Vec<Self::Diagnostic>) {}
-
+    fn create_node_token_list(
+        &mut self,
+        _node_ref: NodeRef,
+        _diags: &mut Vec<Self::Diagnostic>,
+    ) {}
     /// Called when semantic predicate `?1` in rule `decl` is visited.
     fn predicate_decl_1(&self) -> bool;
 }
