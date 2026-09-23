@@ -295,26 +295,30 @@ impl CstData {
         self.nodes[node_ref.0]
     }
     pub fn span(&self, node_ref: NodeRef) -> Span {
+        match self.nodes[node_ref.0] {
+            Node::Token(_, idx) => self.spans[usize::from(idx)].clone(),
+            Node::Rule(_, end_offset) => {
+                self.rule_span(node_ref.0, node_ref.0 + usize::from(end_offset))
+            }
+        }
+    }
+    /// Returns the span of a rule node with the node index `start` and the
+    /// node index `end` of its last child (inclusive).
+    fn rule_span(&self, start: usize, end: usize) -> Span {
         fn find_token<'a>(mut iter: impl Iterator<Item = &'a Node>) -> Option<usize> {
             iter.find_map(|node| match node {
                 Node::Rule(..) => None,
                 Node::Token(_, idx) => Some(usize::from(*idx)),
             })
         }
-        match self.nodes[node_ref.0] {
-            Node::Token(_, idx) => self.spans[usize::from(idx)].clone(),
-            Node::Rule(_, end_offset) => {
-                let end = node_ref.0 + usize::from(end_offset);
-                let first = find_token(self.nodes[node_ref.0 + 1..=end].iter());
-                let last = find_token(self.nodes[node_ref.0 + 1..=end].iter().rev());
-                if let (Some(first), Some(last)) = (first, last) {
-                    self.spans[first].start..self.spans[last].end
-                } else {
-                    let offset = find_token(self.nodes[..node_ref.0].iter().rev())
-                        .map_or(0, |before| self.spans[before].end);
-                    offset..offset
-                }
-            }
+        let first = find_token(self.nodes[start + 1..=end].iter());
+        let last = find_token(self.nodes[start + 1..=end].iter().rev());
+        if let (Some(first), Some(last)) = (first, last) {
+            self.spans[first].start..self.spans[last].end
+        } else {
+            let offset = find_token(self.nodes[..start].iter().rev())
+                .map_or(0, |before| self.spans[before].end);
+            offset..offset
         }
     }
     pub fn match_token(&self, node_ref: NodeRef, matched_token: Token) -> Option<Span> {
@@ -629,6 +633,15 @@ impl<'a> Parser<'a> {
             .spans
             .get(self.pos)
             .map_or(self.max_offset..self.max_offset, |span| span.clone())
+    }
+    /// Returns the span of the innermost currently open rule node based on the
+    /// tokens consumed so far. This is only meaningful during parsing, e.g. in
+    /// a semantic action, predicate, or assertion.
+    fn current_node_span(&self) -> Span {
+        let Some(&start) = self.cst.data.starts.last() else {
+            return self.span();
+        };
+        self.cst.data.rule_span(start, self.cst.data.nodes.len() - 1)
     }
     #[allow(clippy::clone_on_copy, clippy::unit_arg)]
     fn get_state(
